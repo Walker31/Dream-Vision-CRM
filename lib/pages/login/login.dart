@@ -35,7 +35,20 @@ class _LoginPageState extends State<LoginPage> {
     );
 
     if (success && mounted) {
-      context.go('/home');
+      final role = authProvider.user?.role;
+
+      switch(role) {
+        case 'Admin':
+        context.go('/admin');
+        break;
+        case 'Counsellor':
+        context.go('/counsellor');
+        break;
+        case 'Telecaller':
+        context.go('/telecaller');
+        break;
+      }
+      
     }
   }
 
@@ -137,13 +150,6 @@ class _LoginPageState extends State<LoginPage> {
                             ],
                           ),
                   ),
-                  TextButton(
-                    onPressed: authProvider.isLoading ? null : () => context.go('/register'),
-                    child: const Text(
-                      "Don't have an account? Sign Up",
-                      style: TextStyle(color: Color(0xFF3A5B8A)),
-                    ),
-                  )
                 ],
               ),
             ),

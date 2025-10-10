@@ -2,10 +2,12 @@ import 'dart:convert';
 import 'package:dreamvision/config/constants.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
+import 'package:logger/logger.dart';
 
 class AuthService {
   static const String _baseUrl = baseUrl;
   final _storage = const FlutterSecureStorage();
+  Logger logger = Logger();
 
   // Helper methods for token storage
   Future<void> _storeTokens(Map<String, dynamic> tokens) async {
@@ -31,6 +33,7 @@ class AuthService {
       body: json.encode({'username': username, 'password': password}),
     );
     final responseBody = json.decode(response.body);
+    logger.d(responseBody);
 
     if (response.statusCode == 200) {
       await _storeTokens(responseBody); // Store tokens on successful login

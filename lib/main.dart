@@ -1,5 +1,6 @@
 // lib/main.dart
 import 'package:dreamvision/pages/CRM/crm_main.dart';
+import 'package:dreamvision/pages/Counsellor/add_enquiry_sheet.dart';
 import 'package:dreamvision/pages/Counsellor/counsellor_dashboard.dart';
 import 'package:dreamvision/pages/Telecaller/telecaller_dashboard.dart';
 import 'package:dreamvision/pages/home/home.dart';
@@ -45,11 +46,12 @@ final GoRouter _router = GoRouter(
   routes: [
     GoRoute(path: '/', builder: (context, state) => const SplashPage()),
     GoRoute(path: '/login', builder: (context, state) => const LoginPage()),
-    GoRoute(path: '/home', builder: (context, state) => const HomePage()),
+    GoRoute(path: '/admin', builder: (context, state) => const HomePage()),
     GoRoute(path: '/users', builder: (context, state) => const UserListPage()),
     GoRoute(path: '/crm', builder: (context, state) => const CRM()),
     GoRoute(path: '/telecaller', builder: (context, state) => const TelecallerDashboard()),
-    GoRoute(path: '/councellor', builder: (context, state) => const CounsellorDashboard()),
+    GoRoute(path: '/counsellor', builder: (context, state) => const CounsellorDashboard()),
+    GoRoute(path: '/add-enquiry', builder: (context, state) => const AddEnquiryPage()),
     GoRoute(
       path: '/profile/details',
       builder: (context, state) => const EmployeeDetailsPage(),

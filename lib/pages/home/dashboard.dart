@@ -59,9 +59,13 @@ class _DashboardState extends State<Dashboard> {
                   height: 40,
                   color: Colors.grey[700],
                   child: const Center(
-                    child: Text('DV',
-                        style: TextStyle(
-                            color: Colors.white, fontWeight: FontWeight.bold)),
+                    child: Text(
+                      'DV',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 );
               },
@@ -84,20 +88,16 @@ class _DashboardState extends State<Dashboard> {
                 context.push('/users');
               },
             ),
+            const Spacer(),
             ListTile(
-              title: const Text('Counsellor Dashboard'),
-              leading: const Icon(Icons.people),
+              title: const Text('Logout'),
+              leading: const Icon(Icons.logout),
               onTap: () {
-                context.push('/councellor');
+                // Proper logout logic should be handled by a provider
+                context.go('/login');
               },
             ),
-            ListTile(
-              title: const Text('Telecaller Dashboard'),
-              leading: const Icon(Icons.phone),
-              onTap: () {
-                context.push('/telecaller');
-              },
-            ),
+            const SizedBox(height: 20),
           ],
         ),
       ),
@@ -163,10 +163,7 @@ class _DashboardState extends State<Dashboard> {
               ],
             ),
             const SizedBox(height: 16),
-            SizedBox(
-              height: 150,
-              child: _buildSyncfusionChart(),
-            ),
+            SizedBox(height: 150, child: _buildSyncfusionChart()),
             const SizedBox(height: 16),
             Align(
               alignment: Alignment.centerRight,
@@ -201,10 +198,7 @@ class _DashboardState extends State<Dashboard> {
           xValueMapper: (_SalesData sales, _) => sales.day,
           yValueMapper: (_SalesData sales, _) => sales.sales,
           gradient: LinearGradient(
-            colors: [
-              theme.primaryColor,
-              theme.primaryColor.withOpacity(0.3),
-            ],
+            colors: [theme.primaryColor, theme.primaryColor.withOpacity(0.3)],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
