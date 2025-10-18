@@ -1,5 +1,5 @@
-import 'package:dreamvision/pages/home/dashboard.dart';
-import 'package:dreamvision/pages/home/profile/profile.dart';
+import 'package:dreamvision/pages/Admin/dashboard.dart';
+import 'package:dreamvision/pages/Admin/profile/profile.dart';
 import 'package:flutter/material.dart';
 
 class HomePage extends StatefulWidget {

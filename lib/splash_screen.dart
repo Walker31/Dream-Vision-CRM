@@ -13,11 +13,8 @@ class _SplashPageState extends State<SplashPage> {
   @override
   void initState() {
     super.initState();
-    // Navigate to the login page after a 3-second delay.
     Timer(const Duration(seconds: 3), () {
       if (mounted) {
-        // Use go() to replace the splash screen in the navigation stack,
-        // so the user can't press "back" to see it again.
         context.go('/login');
       }
     });
@@ -26,13 +23,12 @@ class _SplashPageState extends State<SplashPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       body: Center(
         child: Padding(
-          padding: const EdgeInsets.all(48.0), // Adds some space around the logo
+          padding: const EdgeInsets.all(48.0),
           child: Image.asset(
-            'assets/Logo Vertical.jpg',
-            // This is a fallback widget that will be shown if the image
-            // fails to load for any reason.
+            'assets/logo.jpg',
             errorBuilder: (context, error, stackTrace) {
               return const Center(
                 child: Text(

@@ -3,12 +3,12 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:dreamvision/services/auth_service.dart';
-import 'package:dreamvision/services/api_client.dart'; // You will need the ApiClient
+import 'package:dreamvision/services/api_client.dart';
 import 'package:dreamvision/models/user_model.dart';
 
 class AuthProvider with ChangeNotifier {
   final AuthService _authService = AuthService();
-  final ApiClient _apiClient = ApiClient(); // Use ApiClient for authenticated requests
+  final ApiClient _apiClient = ApiClient();
 
   User? _user;
   bool _isLoading = false;

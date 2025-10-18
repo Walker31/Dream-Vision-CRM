@@ -9,7 +9,6 @@ class AuthService {
   final _storage = const FlutterSecureStorage();
   Logger logger = Logger();
 
-  // Helper methods for token storage
   Future<void> _storeTokens(Map<String, dynamic> tokens) async {
     await _storage.write(key: 'access_token', value: tokens['access']);
     await _storage.write(key: 'refresh_token', value: tokens['refresh']);
@@ -20,7 +19,6 @@ class AuthService {
   }
 
   Future<void> logout() async {
-    // Delete the specific keys instead of deleteAll()
     await _storage.delete(key: 'access_token');
     await _storage.delete(key: 'refresh_token');
   }
@@ -33,21 +31,62 @@ class AuthService {
       body: json.encode({'username': username, 'password': password}),
     );
     final responseBody = json.decode(response.body);
-    logger.d(responseBody);
 
     if (response.statusCode == 200) {
-      await _storeTokens(responseBody); // Store tokens on successful login
+      logger.d(responseBody);
+      await _storeTokens(responseBody);
       return responseBody;
     } else {
+      logger.e(responseBody['detail']);
       throw Exception(responseBody['detail'] ?? 'Failed to login.');
     }
   }
-  
-  // Method to refresh the access token
+
+  Future<Map<String, dynamic>> getUserProfile() async {
+    String? token = await getAccessToken();
+    if (token == null) {
+      throw Exception('Not authenticated. Please login.');
+    }
+
+    final url = Uri.parse('$_baseUrl/users/profile/');
+    
+    var response = await http.get(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode == 401) {
+      logger.i('Access token expired. Refreshing token...');
+      try {
+        final newAccessToken = await refreshToken();
+
+        logger.i('Retrying request with new token...');
+        response = await http.get(
+          url,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $newAccessToken',
+          },
+        );
+      } catch (e) {
+        rethrow;
+      }
+    }
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      logger.e('Failed to fetch user profile. Status: ${response.statusCode}, Body: ${response.body}');
+      throw Exception('Failed to load user profile.');
+    }
+  }
+
   Future<String?> refreshToken() async {
     final refreshToken = await _storage.read(key: 'refresh_token');
     if (refreshToken == null) {
-      await logout(); // No refresh token, force logout
+      await logout();
       throw Exception('User not authenticated.');
     }
 
@@ -63,13 +102,11 @@ class AuthService {
       await _storage.write(key: 'access_token', value: newTokens['access']);
       return newTokens['access'];
     } else {
-      // If refresh token is also invalid, log the user out
       await logout();
       throw Exception('Session expired. Please login again.');
     }
   }
 
-  // Your signUp and _formatErrors methods remain the same
   Future<void> signUp({
     required String username,
     required String password,
@@ -110,7 +147,6 @@ class AuthService {
   }
 }
 
-// Keep this extension
 extension StringExtension on String {
   String capitalize() {
     if (isEmpty) return this;

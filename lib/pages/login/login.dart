@@ -58,7 +58,7 @@ class _LoginPageState extends State<LoginPage> {
     final authProvider = context.watch<AuthProvider>();
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Color.fromRGBO(255, 253, 254, 1),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -146,7 +146,7 @@ class _LoginPageState extends State<LoginPage> {
                             children: [
                               Text('Sign In', style: TextStyle(fontSize: 18, color: Colors.white)),
                               SizedBox(width: 8),
-                              Icon(Icons.arrow_forward, color: Colors.white),
+                              Icon(Icons.arrow_forward_ios_rounded, color: Colors.white),
                             ],
                           ),
                   ),

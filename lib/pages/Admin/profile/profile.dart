@@ -15,11 +15,6 @@ class _ProfileState extends State<Profile> {
   final List<Map<String, dynamic>> _menuItems = [
     // --- NEW ITEM ADDED ---
     {'icon': Icons.badge_outlined, 'title': 'Employee Details', 'route': '/profile/details'},
-    {'icon': Icons.leaderboard_outlined, 'title': 'Leads', 'route': '/leads'},
-    {'icon': Icons.task_alt_outlined, 'title': 'Tasks', 'route': '/tasks'},
-    {'icon': Icons.analytics_outlined, 'title': 'Report/Analysis', 'route': '/reports'},
-    {'icon': Icons.favorite_border_outlined, 'title': 'Favorites', 'route': '/favorites'},
-    {'icon': Icons.contacts_outlined, 'title': 'Contacts', 'route': '/contacts'},
   ];
 
   Logger logger = Logger();
@@ -48,8 +43,6 @@ class _ProfileState extends State<Profile> {
             children: [
               const SizedBox(height: 20),
               _buildProfileHeader(),
-              const SizedBox(height: 24),
-              _buildStatsRow(),
               const SizedBox(height: 24),
               _buildActionList(),
               const SizedBox(height: 20),
@@ -84,34 +77,6 @@ class _ProfileState extends State<Profile> {
           style: Theme.of(
             context,
           ).textTheme.titleMedium?.copyWith(color: Colors.grey[600]),
-        ),
-      ],
-    );
-  }
-
-  /// Builds the row with "Products" and "Team Projects" stats.
-  Widget _buildStatsRow() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        _buildStatItem(Icons.inventory_2_outlined, 'Products'),
-        _buildStatItem(Icons.group_work_outlined, 'Team Projects'),
-      ],
-    );
-  }
-
-  /// Helper widget for an individual stat item.
-  Widget _buildStatItem(IconData icon, String label) {
-    return Column(
-      children: [
-        Icon(icon, size: 30, color: Colors.blueAccent),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.grey[700],
-            fontWeight: FontWeight.w600,
-          ),
         ),
       ],
     );
