@@ -1,9 +1,68 @@
 import 'dart:async';
-import 'package:dreamvision/models/enquiry_model.dart';
 import 'package:dreamvision/services/enquiry_service.dart';
 import 'package:dreamvision/widgets/back_button.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+
+// The Enquiry model is needed for this page to function.
+// In a real app, this would be in its own file (e.g., models/enquiry_model.dart)
+class Enquiry {
+  final int id;
+  final String? school;
+  final List<dynamic> interactions;
+  final List<dynamic> followUps;
+  final String? assignedToCounsellorDetails;
+  final String? assignedToTelecallerDetails;
+  final String? currentStatusName;
+  final String? sourceName;
+  final String firstName;
+  final String? middleName;
+  final String? lastName;
+  final String? dateOfBirth;
+  final String phoneNumber;
+  final String? email;
+  final String? leadTemperature;
+  // Add other fields as needed for the list item if you want to display more info
+  
+  Enquiry({
+    required this.id,
+    this.school,
+    required this.interactions,
+    required this.followUps,
+    this.assignedToCounsellorDetails,
+    this.assignedToTelecallerDetails,
+    this.currentStatusName,
+    this.sourceName,
+    required this.firstName,
+    this.middleName,
+    this.lastName,
+    this.dateOfBirth,
+    required this.phoneNumber,
+    this.email,
+    this.leadTemperature,
+  });
+
+  factory Enquiry.fromJson(Map<String, dynamic> json) {
+    return Enquiry(
+      id: json['id'],
+      school: json['school'],
+      interactions: json['interactions'] ?? [],
+      followUps: json['follow_ups'] ?? [],
+      assignedToCounsellorDetails: json['assigned_to_counsellor_details'],
+      assignedToTelecallerDetails: json['assigned_to_telecaller_details'],
+      currentStatusName: json['current_status_name'],
+      sourceName: json['source_name'],
+      firstName: json['first_name'] ?? '',
+      middleName: json['middle_name'],
+      lastName: json['last_name'],
+      dateOfBirth: json['date_of_birth'],
+      phoneNumber: json['phone_number'] ?? 'N/A',
+      email: json['email'],
+      leadTemperature: json['lead_temperature'],
+    );
+  }
+}
+
 
 class AllEnquiriesPage extends StatefulWidget {
   const AllEnquiriesPage({super.key});
@@ -13,12 +72,10 @@ class AllEnquiriesPage extends StatefulWidget {
 }
 
 class _AllEnquiriesPageState extends State<AllEnquiriesPage> {
-  // Services and Controllers
   final EnquiryService _enquiryService = EnquiryService();
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
 
-  // State Management
   final List<Enquiry> _enquiries = [];
   int _currentPage = 1;
   bool _hasNextPage = true;
@@ -32,7 +89,6 @@ class _AllEnquiriesPageState extends State<AllEnquiriesPage> {
   void initState() {
     super.initState();
     _fetchEnquiries();
-
     _scrollController.addListener(_onScroll);
     _searchController.addListener(_onSearchChanged);
   }
@@ -185,7 +241,6 @@ class _AllEnquiriesPageState extends State<AllEnquiriesPage> {
   }
 }
 
-// A dedicated widget for the list item for cleaner code
 class _EnquiryListItem extends StatelessWidget {
   final Enquiry enquiry;
 
@@ -250,13 +305,28 @@ class _EnquiryListItem extends StatelessWidget {
             ],
           ),
         ),
-        trailing: Chip(
-          label: Text(
-            status,
-            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
-          ),
-          backgroundColor: _getStatusColor(status),
-          padding: const EdgeInsets.symmetric(horizontal: 4),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Chip(
+              label: Text(
+                status,
+                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
+              ),
+              backgroundColor: _getStatusColor(status),
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+            ),
+            IconButton(
+              icon: const Icon(Icons.history, color: Colors.blueGrey),
+              tooltip: 'View Follow-up History',
+              onPressed: () {
+                context.push(
+                  '/follow-ups/${enquiry.id}',
+                  extra: fullName, // Pass the name for the AppBar title
+                );
+              },
+            ),
+          ],
         ),
         onTap: () => context.push('/enquiry/${enquiry.id}'),
       ),

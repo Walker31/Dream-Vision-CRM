@@ -12,21 +12,28 @@ class AddEnquiryPage extends StatefulWidget {
 }
 
 class _AddEnquiryPageState extends State<AddEnquiryPage> {
-  final _formKey = GlobalKey<FormState>();
   final Logger _logger = Logger();
   final EnquiryService _enquiryService = EnquiryService();
 
+  // --- PageView & Form State ---
+  final PageController _pageController = PageController();
+  int _currentPage = 0;
+  final List<GlobalKey<FormState>> _formKeys = [
+    GlobalKey<FormState>(), // Key for Step 1
+    GlobalKey<FormState>(), // Key for Step 2
+    GlobalKey<FormState>(), // Key for Step 3
+  ];
+
+  // --- Loading States ---
   bool _isLoading = true;
   bool _isSubmitting = false;
-  int _currentStep = 0;
 
+  // --- Data & Controllers (same as before) ---
   List<Map<String, dynamic>> _sources = [];
   List<Map<String, dynamic>> _statuses = [];
   List<Map<String, dynamic>> _schools = [];
   static const int _otherSchoolId = -1;
-
   final List<Map<String, dynamic>> _academicForms = [];
-
   DateTime? _selectedDate = DateTime.now();
   DateTime? _selectedDob;
   String? _enquiringForStandard;
@@ -37,7 +44,6 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
   int? _sourceId;
   int? _currentStatusId;
   int? _selectedSchoolId;
-
   final _firstNameController = TextEditingController();
   final _middleNameController = TextEditingController();
   final _lastNameController = TextEditingController();
@@ -61,6 +67,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
 
   @override
   void dispose() {
+    _pageController.dispose();
     _firstNameController.dispose();
     _middleNameController.dispose();
     _lastNameController.dispose();
@@ -83,29 +90,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
     super.dispose();
   }
 
-  void _addAcademicForm() {
-    setState(() {
-      _academicForms.add({
-        'standard_level': TextEditingController(),
-        'board': TextEditingController(),
-        'percentage': TextEditingController(),
-        'science_marks': TextEditingController(),
-        'maths_marks': TextEditingController(),
-        'english_marks': TextEditingController(),
-        'isSaved': false,
-      });
-    });
-  }
-
-  void _removeAcademicForm(int index) {
-    _academicForms[index].forEach((key, controller) {
-      if (controller is TextEditingController) controller.dispose();
-    });
-    setState(() {
-      _academicForms.removeAt(index);
-    });
-  }
-
+  // --- Data Loading (same as before) ---
   Future<void> _loadInitialData() async {
     try {
       final results = await Future.wait([
@@ -135,8 +120,34 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
     }
   }
 
+  // --- Academic Form Management (same as before) ---
+  void _addAcademicForm() {
+    setState(() {
+      _academicForms.add({
+        'standard_level': TextEditingController(),
+        'board': TextEditingController(),
+        'percentage': TextEditingController(),
+        'science_marks': TextEditingController(),
+        'maths_marks': TextEditingController(),
+        'english_marks': TextEditingController(),
+        'isSaved': false,
+      });
+    });
+  }
+
+  void _removeAcademicForm(int index) {
+    _academicForms[index].forEach((key, controller) {
+      if (controller is TextEditingController) controller.dispose();
+    });
+    setState(() => _academicForms.removeAt(index));
+  }
+
+  // --- Form Submission (mostly same, collects data from all controllers) ---
   Future<void> _submitForm() async {
-    if (!_formKey.currentState!.validate() || _isSubmitting) return;
+    // Validate the *last* form key before submitting
+    if (!_formKeys[_currentPage].currentState!.validate() || _isSubmitting) {
+      return;
+    }
 
     setState(() => _isSubmitting = true);
 
@@ -181,7 +192,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
         'email': _emailController.text,
         'address': _addressController.text,
         'pincode': _pincodeController.text,
-        'school_name': schoolName,
+        'school': schoolName, // Use corrected key
         'referred_by': _referredBy.toList(),
         'enquiring_for_standard': _enquiringForStandard,
         'enquiring_for_exam': _selectedExams.join(', '),
@@ -199,7 +210,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
         'referral': _referralController.text,
         'source': _sourceId,
         'current_status': _currentStatusId,
-        'academic_performances': academicDataList,
+        'academic_performance': academicDataList, // Use corrected key
       };
 
       await _enquiryService.createEnquiry(enquiryData);
@@ -230,97 +241,75 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
     }
   }
 
+  // --- Page Navigation Logic ---
+  void _nextPage() {
+    // Validate the current page's form before proceeding
+    if (_formKeys[_currentPage].currentState!.validate()) {
+      if (_currentPage < 2) {
+        _pageController.nextPage(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      } else {
+        // If on the last page, submit the form
+        _submitForm();
+      }
+    }
+  }
+
+  void _previousPage() {
+    if (_currentPage > 0) {
+      _pageController.previousPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const BackButtonIos(),
-        title: const Text('New Enquiry'),
+        leading: const BackButtonIos(), // Use your custom back button
+        title: Text('New Enquiry (Step ${_currentPage + 1} of 3)'),
         centerTitle: false,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Form(
-              key: _formKey,
-              child: Theme(
-                data: Theme.of(context).copyWith(
-                  inputDecorationTheme: InputDecorationTheme(
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide.none,
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey.withValues(alpha: 0.1),
+          : Column(
+              children: [
+                Expanded(
+                  child: PageView(
+                    controller: _pageController,
+                    onPageChanged: (index) {
+                      setState(() => _currentPage = index);
+                    },
+                    children: [
+                      // Wrap each step's content in its own Form widget
+                      _buildStepPage(_buildStep1, 0),
+                      _buildStepPage(_buildStep2, 1),
+                      _buildStepPage(_buildStep3, 2),
+                    ],
                   ),
                 ),
-                child: Stepper(
-                  type: StepperType.vertical,
-                  currentStep: _currentStep,
-                  onStepContinue: () {
-                    if (_currentStep < 2) {
-                      setState(() => _currentStep += 1);
-                    } else {
-                      _submitForm();
-                    }
-                  },
-                  onStepCancel: () {
-                    if (_currentStep > 0) {
-                      setState(() => _currentStep -= 1);
-                    }
-                  },
-                  onStepTapped: (step) => setState(() => _currentStep = step),
-                  controlsBuilder: (context, details) {
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 16.0),
-                      child: Row(
-                        children: <Widget>[
-                          ElevatedButton(
-                            onPressed: details.onStepContinue,
-                            child: Text(
-                              details.currentStep == 2 ? 'Submit' : 'Next',
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          if (details.currentStep > 0)
-                            TextButton(
-                              onPressed: details.onStepCancel,
-                              child: const Text('Back'),
-                            ),
-                        ],
-                      ),
-                    );
-                  },
-                  steps: _buildSteps(),
-                ),
-              ),
+                // --- Navigation Controls ---
+                _buildNavigationControls(),
+              ],
             ),
     );
   }
 
-  List<Step> _buildSteps() {
-    return [
-      Step(
-        title: const Text('Student & Parent Info'),
-        content: _buildStep1(),
-        isActive: _currentStep >= 0,
-        state: _currentStep > 0 ? StepState.complete : StepState.indexed,
-      ),
-      Step(
-        title: const Text('Academic Details'),
-        content: _buildStep2(),
-        isActive: _currentStep >= 1,
-        state: _currentStep > 1 ? StepState.complete : StepState.indexed,
-      ),
-      Step(
-        title: const Text('Office & Financials'),
-        content: _buildStep3(),
-        isActive: _currentStep >= 2,
-        state: _currentStep > 2 ? StepState.complete : StepState.indexed,
-      ),
-    ];
+  // Helper to wrap step content in Padding and Form
+  Widget _buildStepPage(Widget Function() buildContent, int pageIndex) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: Form(key: _formKeys[pageIndex], child: buildContent()),
+    );
   }
 
+  // --- Build Methods for Each Step/Page ---
   Widget _buildStep1() {
+    // Content is the same, just return the Column directly
     return Column(
       children: [
         _buildSectionCard(
@@ -452,9 +441,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
             ...List.generate(
               _academicForms.length,
               (index) => _AcademicFormWidget(
-                key: ValueKey(
-                  index,
-                ), // Important for stateful widgets in a list
+                key: ValueKey(index),
                 formControllers: _academicForms[index],
                 index: index,
                 onRemove: () => _removeAcademicForm(index),
@@ -530,13 +517,90 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
     );
   }
 
+  Widget _buildNavigationControls() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        border: Border(
+          top: BorderSide(
+            color: Colors.grey.withValues(alpha: 0.2),
+            width: 1.0,
+          ),
+        ),
+      ),
+      child: SafeArea(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween, // Ensure spacing
+          children: [
+            // --- Back Button ---
+            Opacity(
+              // Use Opacity to hide but maintain layout space
+              opacity: _currentPage > 0 ? 1.0 : 0.0,
+              child: IgnorePointer(
+                // Prevent taps when hidden
+                ignoring: _currentPage == 0,
+                child: TextButton.icon(
+                  icon: const Icon(Icons.arrow_back_ios_new, size: 16),
+                  label: const Text('Back'),
+                  onPressed: _isSubmitting ? null : _previousPage,
+                ),
+              ),
+            ),
+
+            // --- Page Indicator Dots ---
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(3, (index) => _buildDotIndicator(index)),
+            ),
+
+            // --- Next/Submit Button ---
+            ElevatedButton.icon(
+              icon: _isSubmitting
+                  ? Container(
+                      width: 18,
+                      height: 18,
+                      padding: const EdgeInsets.all(2.0),
+                      child: const CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Icon(Icons.arrow_forward_ios, size: 16),
+              label: Text(
+                _isSubmitting
+                    ? 'Saving...'
+                    : (_currentPage == 2 ? 'Submit' : 'Next'),
+              ),
+              onPressed: _isSubmitting ? null : _nextPage,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDotIndicator(int index) {
+    bool isActive = _currentPage == index;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      width: isActive ? 12.0 : 8.0,
+      height: isActive ? 12.0 : 8.0,
+      margin: const EdgeInsets.symmetric(horizontal: 6.0),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: isActive ? Theme.of(context).primaryColor : Colors.grey.shade400,
+      ),
+    );
+  }
+
   Widget _buildSectionCard({
     required String title,
     required List<Widget> children,
     List<Widget>? actions,
   }) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 20), // Added more bottom margin
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
@@ -581,7 +645,15 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
         controller: controller,
         maxLines: maxLines,
         keyboardType: keyboardType,
-        decoration: InputDecoration(labelText: label),
+        decoration: InputDecoration(
+          labelText: label,
+          filled: true,
+          fillColor: Colors.grey.withValues(alpha: 0.1),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide.none,
+          ),
+        ),
         validator: (value) {
           if (isRequired && (value == null || value.isEmpty)) {
             return 'Please enter $label';
@@ -601,6 +673,12 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
           decoration: InputDecoration(
             labelText: label,
             suffixIcon: const Icon(Icons.calendar_today),
+            filled: true,
+            fillColor: Colors.grey.withValues(alpha: 0.1),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide.none,
+            ),
           ),
           child: Text(
             date != null ? DateFormat.yMd().format(date) : 'Select a date',
@@ -620,7 +698,15 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: DropdownButtonFormField<String>(
-        decoration: InputDecoration(labelText: label),
+        decoration: InputDecoration(
+          labelText: label,
+          filled: true,
+          fillColor: Colors.grey.withValues(alpha: 0.1),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide.none,
+          ),
+        ),
         value: value,
         items: items
             .map(
@@ -659,7 +745,15 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: DropdownButtonFormField<int>(
-        decoration: InputDecoration(labelText: label),
+        decoration: InputDecoration(
+          labelText: label,
+          filled: true,
+          fillColor: Colors.grey.withValues(alpha: 0.1),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide.none,
+          ),
+        ),
         value: value,
         items: dropdownItems,
         onChanged: onChanged,
@@ -676,19 +770,37 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8.0),
+          child: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+          ),
         ),
-        const SizedBox(height: 8),
         Wrap(
           spacing: 8.0,
           children: options.map((option) {
+            final bool isSelected = groupValue == option;
             return ChoiceChip(
               label: Text(option),
-              selected: groupValue == option,
+              selected: isSelected,
+              // Hide the default checkmark
+              showCheckmark: false,
+              // Set a custom color for the selected chip
+              selectedColor: Theme.of(context).primaryColor,
+              // Change the text style for better contrast when selected
+              labelStyle: TextStyle(
+                color: isSelected
+                    ? Colors.white
+                    : Theme.of(context).textTheme.bodyLarge?.color,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+              // Optional: A subtle background for unselected chips
+              backgroundColor: Colors.grey.withValues(alpha: 0.1),
               onSelected: (selected) {
-                if (selected) onChanged(option);
+                if (selected) {
+                  onChanged(option);
+                }
               },
             );
           }).toList(),
@@ -705,27 +817,41 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8.0),
+          child: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+          ),
         ),
-        const SizedBox(height: 8),
         Wrap(
           spacing: 8.0,
           runSpacing: 4.0,
-          children: options
-              .map(
-                (option) => FilterChip(
-                  label: Text(option),
-                  selected: selectedValues.contains(option),
-                  onSelected: (selected) => setState(
-                    () => selected
-                        ? selectedValues.add(option)
-                        : selectedValues.remove(option),
-                  ),
-                ),
-              )
-              .toList(),
+          children: options.map((option) {
+            final bool isSelected = selectedValues.contains(option);
+            return FilterChip(
+              label: Text(option),
+              selected: isSelected,
+              showCheckmark: false,
+              selectedColor: Theme.of(context).primaryColor,
+              labelStyle: TextStyle(
+                color: isSelected
+                    ? Colors.white
+                    : Theme.of(context).textTheme.bodyLarge?.color,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+              backgroundColor: Colors.grey.withValues(alpha: 0.1),
+              onSelected: (selected) {
+                setState(() {
+                  if (selected) {
+                    selectedValues.add(option);
+                  } else {
+                    selectedValues.remove(option);
+                  }
+                });
+              },
+            );
+          }).toList(),
         ),
       ],
     );
@@ -750,14 +876,13 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
   }
 }
 
-/// A dedicated stateful widget to manage the state of a single academic form.
+// --- Academic Form Widget (Same as before) ---
 class _AcademicFormWidget extends StatefulWidget {
   final Map<String, dynamic> formControllers;
   final int index;
   final VoidCallback onRemove;
   final VoidCallback onSave;
   final VoidCallback onEdit;
-
   const _AcademicFormWidget({
     super.key,
     required this.formControllers,
@@ -766,28 +891,23 @@ class _AcademicFormWidget extends StatefulWidget {
     required this.onSave,
     required this.onEdit,
   });
-
   @override
   State<_AcademicFormWidget> createState() => _AcademicFormWidgetState();
 }
 
 class _AcademicFormWidgetState extends State<_AcademicFormWidget> {
   bool _isSaveEnabled = false;
-
   late final TextEditingController _standardController;
   late final TextEditingController _boardController;
-
   @override
   void initState() {
     super.initState();
     _standardController =
         widget.formControllers['standard_level'] as TextEditingController;
     _boardController = widget.formControllers['board'] as TextEditingController;
-
     _standardController.addListener(_validateForm);
     _boardController.addListener(_validateForm);
-
-    _validateForm(); // Initial check
+    _validateForm();
   }
 
   @override
@@ -800,11 +920,7 @@ class _AcademicFormWidgetState extends State<_AcademicFormWidget> {
   void _validateForm() {
     final bool isValid =
         _standardController.text.isNotEmpty && _boardController.text.isNotEmpty;
-    if (isValid != _isSaveEnabled) {
-      setState(() {
-        _isSaveEnabled = isValid;
-      });
-    }
+    if (isValid != _isSaveEnabled) setState(() => _isSaveEnabled = isValid);
   }
 
   @override
@@ -858,8 +974,16 @@ class _AcademicFormWidgetState extends State<_AcademicFormWidget> {
           ],
         ),
         const Divider(),
-        _buildTextField(_standardController, 'Standard (e.g., 10th)'),
-        _buildTextField(_boardController, 'Board (e.g., CBSE)'),
+        _buildTextField(
+          _standardController,
+          'Standard (e.g., 10th)',
+          isRequired: true,
+        ), // Make required fields clear
+        _buildTextField(
+          _boardController,
+          'Board (e.g., CBSE)',
+          isRequired: true,
+        ),
         _buildTextField(
           widget.formControllers['percentage'] as TextEditingController,
           'Percentage / CGPA',
@@ -896,6 +1020,7 @@ class _AcademicFormWidgetState extends State<_AcademicFormWidget> {
     );
   }
 
+  // Local buildTextField - required for _AcademicFormWidget
   Widget _buildTextField(
     TextEditingController controller,
     String label, {
@@ -907,7 +1032,15 @@ class _AcademicFormWidgetState extends State<_AcademicFormWidget> {
       child: TextFormField(
         controller: controller,
         keyboardType: keyboardType,
-        decoration: InputDecoration(labelText: label),
+        decoration: InputDecoration(
+          labelText: label,
+          filled: true,
+          fillColor: Colors.grey.withValues(alpha: 0.1), // Consistent fill
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide.none,
+          ),
+        ),
         validator: (value) {
           if (isRequired && (value == null || value.isEmpty)) {
             return 'Please enter $label';

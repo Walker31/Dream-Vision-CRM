@@ -3,8 +3,8 @@ class Enquiry {
   final String? school;
   final List<dynamic> interactions;
   final List<dynamic> followUps;
-  final String? assignedToCounsellorDetails;
-  final String? assignedToTelecallerDetails;
+  final Map<String, dynamic>? assignedToCounsellorDetails;
+  final Map<String, dynamic>? assignedToTelecallerDetails;
   final String? currentStatusName;
   final String? sourceName;
   final String firstName;
@@ -70,8 +70,8 @@ class Enquiry {
       school: json['school'],
       interactions: json['interactions'] ?? [],
       followUps: json['follow_ups'] ?? [],
-      assignedToCounsellorDetails: json['assigned_to_counsellor_details'],
-      assignedToTelecallerDetails: json['assigned_to_telecaller_details'],
+      assignedToCounsellorDetails: json['assigned_to_counsellor_details'] as Map<String, dynamic>?,
+      assignedToTelecallerDetails: json['assigned_to_telecaller_details'] as Map<String, dynamic>?,
       currentStatusName: json['current_status_name'],
       sourceName: json['source_name'],
       firstName: json['first_name'],

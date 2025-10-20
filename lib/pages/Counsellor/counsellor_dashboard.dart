@@ -3,16 +3,8 @@ import 'package:dreamvision/services/enquiry_service.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:logger/logger.dart';
-import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:intl/intl.dart';
-
-// --- DATA MODELS ---
-class _ChartData {
-  _ChartData(this.status, this.value, this.color);
-  final String status;
-  final double value;
-  final Color color;
-}
+import '../../charts/enquiry_status_data.dart';
 
 class CounsellorDashboard extends StatefulWidget {
   const CounsellorDashboard({super.key});
@@ -27,7 +19,9 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
 
   late Future<void> _dashboardDataFuture;
   List<Enquiry> _recentEnquiries = [];
-  List<_ChartData> _chartDataSource = [];
+
+  // 2. The data source list now uses the public 'ChartData' class
+  List<ChartData> _chartDataSource = [];
 
   @override
   void initState() {
@@ -64,9 +58,7 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
       throw Exception('Could not load dashboard data. Please try again.');
     }
   }
-
-  /// Builds the chart data from the new aggregated summary API.
-  List<_ChartData> _buildChartDataFromSummary(List<dynamic> summaryData) {
+  List<ChartData> _buildChartDataFromSummary(List<dynamic> summaryData) {
     if (summaryData.isEmpty) {
       return [];
     }
@@ -80,7 +72,8 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
       final status = item['status'] as String;
       final count = item['count'] as int;
       final percentage = total > 0 ? (count / total) * 100 : 0.0;
-      return _ChartData(status, percentage, _getStatusColor(status));
+      // 4. Use the public ChartData class
+      return ChartData(status, percentage, _getStatusColor(status));
     }).toList();
   }
 
@@ -180,15 +173,8 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      "Enquiry Status Overview",
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildAnalyticsCharts(),
+                    EnquiryStatusChartCard(chartDataSource: _chartDataSource),
+
                     const SizedBox(height: 24),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -225,75 +211,8 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
     );
   }
 
-  Widget _buildAnalyticsCharts() {
-    if (_chartDataSource.isEmpty) {
-      return const SizedBox(
-        height: 160,
-        child: Center(child: Text("No analytics data available.")),
-      );
-    }
-    return Row(
-      children: [
-        Expanded(
-          flex: 2,
-          child: SizedBox(
-            height: 160,
-            child: SfCircularChart(
-              series: <CircularSeries<_ChartData, String>>[
-                DoughnutSeries<_ChartData, String>(
-                  dataSource: _chartDataSource,
-                  xValueMapper: (_ChartData data, _) => data.status,
-                  yValueMapper: (_ChartData data, _) => data.value,
-                  pointColorMapper: (_ChartData data, _) => data.color,
-                  innerRadius: '60%',
-                  dataLabelSettings: const DataLabelSettings(
-                    isVisible: true,
-                    textStyle: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                    labelPosition: ChartDataLabelPosition.inside,
-                    labelIntersectAction: LabelIntersectAction.hide,
-                  ),
-                  dataLabelMapper: (_ChartData data, _) =>
-                      '${data.value.toStringAsFixed(0)}%',
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          flex: 3,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: _chartDataSource
-                .map(
-                  (data) => _buildLegendItem(
-                    data.color,
-                    '${data.status} (${data.value.toStringAsFixed(1)}%)',
-                  ),
-                )
-                .toList(),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLegendItem(Color color, String text) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        children: [
-          Container(width: 16, height: 16, color: color),
-          const SizedBox(width: 8),
-          Flexible(child: Text(text)),
-        ],
-      ),
-    );
-  }
+  // --- 6. REMOVED _buildAnalyticsCharts() ---
+  // --- 7. REMOVED _buildLegendItem() ---
 
   Widget _buildEnquiryList() {
     if (_recentEnquiries.isEmpty) {

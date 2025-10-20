@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:dreamvision/config/constants.dart';
+import 'package:dreamvision/config/constants.dart'; // Assuming baseUrl is in here
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
@@ -49,7 +49,7 @@ class AuthService {
     }
 
     final url = Uri.parse('$_baseUrl/users/profile/');
-    
+
     var response = await http.get(
       url,
       headers: {
@@ -78,7 +78,8 @@ class AuthService {
     if (response.statusCode == 200) {
       return json.decode(response.body);
     } else {
-      logger.e('Failed to fetch user profile. Status: ${response.statusCode}, Body: ${response.body}');
+      logger.e(
+          'Failed to fetch user profile. Status: ${response.statusCode}, Body: ${response.body}');
       throw Exception('Failed to load user profile.');
     }
   }
@@ -90,7 +91,8 @@ class AuthService {
       throw Exception('User not authenticated.');
     }
 
-    final url = Uri.parse('$_baseUrl/api/token/refresh/');
+    // Assuming your refresh token URL is under /users/ like your other URLs
+    final url = Uri.parse('$_baseUrl/users/token/refresh/');
     final response = await http.post(
       url,
       headers: {'Content-Type': 'application/json'},
@@ -140,10 +142,56 @@ class AuthService {
     var buffer = StringBuffer();
     errors.forEach((key, value) {
       if (value is List) {
-        buffer.writeln('${key.replaceAll('_', ' ').capitalize()}: ${value.join(', ')}');
+        buffer.writeln(
+            '${key.replaceAll('_', ' ').capitalize()}: ${value.join(', ')}');
       }
     });
-    return buffer.toString().trim().isEmpty ? 'An unknown error occurred.' : buffer.toString();
+    return buffer.toString().trim().isEmpty
+        ? 'An unknown error occurred.'
+        : buffer.toString();
+  }
+
+  Future<void> changePassword(
+      String oldPassword, String newPassword1, String newPassword2) async {
+    // 1. Get the user's access token from secure storage
+    final token = await getAccessToken(); // <-- FIX 1
+    if (token == null) {
+      throw Exception('Not authenticated. Please log in again.');
+    }
+
+    // 2. Define the URL using the class's _baseUrl
+    // This now matches your urls.py structure
+    final url = Uri.parse('$_baseUrl/users/profile/change-password/'); // <-- FIX 2
+
+    // 3. Make the API call
+    final response = await http.put(
+      url,
+      headers: {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'old_password': oldPassword,
+        'new_password1': newPassword1,
+        'new_password2': newPassword2,
+      }),
+    );
+
+    // 4. Handle the response
+    if (response.statusCode != 200) {
+      final body = jsonDecode(response.body);
+
+      String errorMessage = 'An unknown error occurred.';
+      if (body['old_password'] != null) {
+        errorMessage = body['old_password'][0];
+      } else if (body['new_password2'] != null) {
+        errorMessage = body['new_password2'][0];
+      } else if (body['detail'] != null) {
+        errorMessage = body['detail'];
+      }
+
+      throw Exception(errorMessage);
+    }
   }
 }
 

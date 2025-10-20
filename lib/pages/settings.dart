@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'package:dreamvision/providers/auth_provider.dart';
 import 'package:dreamvision/providers/theme_provider.dart';
 import 'package:flutter/material.dart';
@@ -90,9 +92,7 @@ class _SettingsState extends State<Settings> {
                         icon: CupertinoIcons.lock,
                         title: 'Change Password',
                         onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Navigate to Change Password')),
-                          );
+                          context.push('/change-password');
                         },
                       ),
                     ],
@@ -131,7 +131,6 @@ class _SettingsState extends State<Settings> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 32),
                 ],
               ),
             ),

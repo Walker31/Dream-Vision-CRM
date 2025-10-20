@@ -1,13 +1,16 @@
+import 'package:dreamvision/pages/Admin/add_user_page.dart';
+import 'package:dreamvision/pages/Admin/admin_dashboard.dart';
 import 'package:dreamvision/pages/CRM/crm_main.dart';
 import 'package:dreamvision/pages/Counsellor/add_enquiry_page.dart';
 import 'package:dreamvision/pages/Counsellor/counsellor_dashboard.dart';
 import 'package:dreamvision/pages/Counsellor/enquiry_detail.dart';
 import 'package:dreamvision/pages/Counsellor/all_enquiries.dart';
 import 'package:dreamvision/pages/Telecaller/telecaller_dashboard.dart';
-import 'package:dreamvision/pages/Admin/home.dart';
 import 'package:dreamvision/pages/Admin/profile/profile_details.dart';
 import 'package:dreamvision/pages/Admin/users.dart';
 import 'package:dreamvision/pages/login/login.dart';
+import 'package:dreamvision/pages/miscellaneous/change_password.dart';
+import 'package:dreamvision/pages/miscellaneous/follow_up_page.dart';
 import 'package:dreamvision/pages/settings.dart';
 import 'package:dreamvision/providers/auth_provider.dart';
 import 'package:dreamvision/providers/theme_provider.dart';
@@ -65,7 +68,7 @@ final GoRouter _router = GoRouter(
   routes: [
     GoRoute(path: '/', builder: (context, state) => const SplashPage()),
     GoRoute(path: '/login', builder: (context, state) => const LoginPage()),
-    GoRoute(path: '/admin', builder: (context, state) => const HomePage()),
+    GoRoute(path: '/admin', builder: (context, state) => const AdminDashboard()),
     GoRoute(path: '/users', builder: (context, state) => const UserListPage()),
     GoRoute(path: '/crm', builder: (context, state) => const CRM()),
     GoRoute(
@@ -87,6 +90,10 @@ final GoRouter _router = GoRouter(
       builder: (context, state) => const EmployeeDetailsPage(),
     ),
     GoRoute(
+      path: '/add-user',
+      builder: (context, state) => const AddUserPage(),
+    ),
+    GoRoute(
       path: '/enquiry/:enquiryId',
       builder: (context, state) {
         final enquiryIdString = state.pathParameters['enquiryId'];
@@ -97,6 +104,21 @@ final GoRouter _router = GoRouter(
     GoRoute(
       path: '/profile/details',
       builder: (context, state) => const EmployeeDetailsPage(),
+    ),
+    GoRoute(
+      path: '/change-password',
+      builder: (context, state) => const ChangePasswordPage(),
+    ),
+    GoRoute(
+      path: '/follow-ups/:enquiryId',
+      builder: (context, state) {
+        final enquiryId = int.tryParse(state.pathParameters['enquiryId'] ?? '') ?? 0;
+        final enquiryName = state.extra as String? ?? 'Enquiry'; // Pass name as extra
+        return FollowUpPage(
+          enquiryId: enquiryId,
+          enquiryName: enquiryName,
+        );
+      },
     ),
   ],
 );
