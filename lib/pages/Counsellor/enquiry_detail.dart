@@ -1,13 +1,10 @@
-// ignore_for_file: use_build_context_synchronously
-
 import 'package:dreamvision/models/enquiry_model.dart';
 import 'package:dreamvision/services/enquiry_service.dart';
 import 'package:dreamvision/widgets/back_button.dart';
 import 'package:flutter/material.dart';
-import 'package:logger/logger.dart'; // Import logger
-import 'dart:async'; // Import for Debouncer
-
-// Import the sheet - you might need to adjust the path
+import 'package:logger/logger.dart';
+import 'dart:async';
+import 'package:go_router/go_router.dart';
 import '../Telecaller/follow_up_sheet.dart';
 
 class EnquiryDetailPage extends StatefulWidget {
@@ -22,7 +19,7 @@ class EnquiryDetailPage extends StatefulWidget {
 class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
   final EnquiryService _enquiryService = EnquiryService();
   late Future<Enquiry> _enquiryFuture;
-  final Logger _logger = Logger(); // Add logger instance
+  final Logger _logger = Logger();
 
   @override
   void initState() {
@@ -36,22 +33,38 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
       return Enquiry.fromJson(jsonData);
     } catch (e) {
       _logger.e('Failed to fetch enquiry: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading enquiry: $e'), backgroundColor: Colors.red),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading enquiry: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+
       rethrow;
     }
   }
 
-  /// Refreshes the enquiry data.
   Future<void> _refreshEnquiryData() async {
     setState(() {
       _enquiryFuture = _fetchEnquiryData();
     });
   }
 
+  void _goToEditPage(BuildContext context, Enquiry enquiry) async {
+    // We expect a bool (true) if the page was saved.
+    final bool? result = await context.push<bool>(
+      '/add-enquiry', // This MUST match your GoRouter path for AddEnquiryPage
+      extra: enquiry, // Pass the full enquiry object
+    );
 
-  /// Shows the Add Follow-up bottom sheet.
+    // If the edit page returns true, it means we saved, so refresh.
+    if (result == true && mounted) {
+      _refreshEnquiryData();
+    }
+  }
+
   void _showAddFollowUpSheet(BuildContext context, Enquiry enquiry) async {
     final bool? didSave = await showModalBottomSheet<bool>(
       context: context,
@@ -63,33 +76,35 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
     );
 
     if (didSave == true && mounted) {
-      _refreshEnquiryData(); // Refresh after follow-up save
+      _refreshEnquiryData();
     }
   }
 
-  // --- NEW: Assignment Logic ---
-
-  /// Shows the dialog to select a user (Counsellor/Telecaller).
-  Future<void> _showUserSelectionDialog(BuildContext context, String role, int enquiryId) async {
+  Future<void> _showUserSelectionDialog(
+    BuildContext context,
+    String role,
+    int enquiryId,
+  ) async {
     final selectedUserId = await showDialog<int>(
       context: context,
       builder: (BuildContext context) {
         return _UserSelectionDialog(
           role: role,
-          enquiryService: _enquiryService, // Pass the service instance
+          enquiryService: _enquiryService,
         );
       },
     );
 
     if (selectedUserId != null && mounted) {
-      // User selected someone, now call the assignment API
       _assignUserToEnquiry(role, selectedUserId, enquiryId);
     }
   }
 
-  /// Calls the service to assign the selected user to the enquiry.
-  Future<void> _assignUserToEnquiry(String role, int userId, int enquiryId) async {
-    // Show loading indicator (optional)
+  Future<void> _assignUserToEnquiry(
+    String role,
+    int userId,
+    int enquiryId,
+  ) async {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -102,8 +117,9 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
         counsellorId: role == 'Counsellor' ? userId : null,
         telecallerId: role == 'Telecaller' ? userId : null,
       );
-
-      Navigator.of(context).pop(); // Close loading dialog
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -112,38 +128,50 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
             backgroundColor: Colors.green,
           ),
         );
-        _refreshEnquiryData(); // Refresh the page to show the assigned user
+        _refreshEnquiryData();
       }
     } catch (e) {
-      Navigator.of(context).pop(); // Close loading dialog on error
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
       _logger.e('Failed to assign $role: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error assigning $role: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error assigning $role: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Enquiry>(
       future: _enquiryFuture,
       builder: (context, snapshot) {
-        Enquiry? enquiry = snapshot.data; // Get enquiry data if available
-
-        // --- Determine AppBar Actions based on loaded data ---
+        Enquiry? enquiry = snapshot.data;
         List<Widget> appBarActions = [];
-        if (snapshot.connectionState == ConnectionState.done && snapshot.hasData && enquiry != null) {
+        String? fullName;
+
+        if (snapshot.connectionState == ConnectionState.done &&
+            snapshot.hasData &&
+            enquiry != null) {
+          fullName =
+              '${enquiry.firstName} ${enquiry.lastName ?? ''}' // CHANGED: Assigned value here
+                  .trim();
           if (enquiry.assignedToCounsellorDetails == null) {
             appBarActions.add(
               TextButton.icon(
                 icon: const Icon(Icons.person_add_alt_1_outlined),
                 label: const Text('Assign Counsellor'),
-                onPressed: () => _showUserSelectionDialog(context, 'Counsellor', enquiry.id),
+                onPressed: () =>
+                    _showUserSelectionDialog(context, 'Counsellor', enquiry.id),
                 style: TextButton.styleFrom(
-                  foregroundColor: Theme.of(context).appBarTheme.foregroundColor, // Use AppBar color
+                  foregroundColor: Theme.of(
+                    context,
+                  ).appBarTheme.foregroundColor,
                 ),
               ),
             );
@@ -153,45 +181,74 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
               TextButton.icon(
                 icon: const Icon(Icons.headset_mic_outlined),
                 label: const Text('Assign Telecaller'),
-                onPressed: () => _showUserSelectionDialog(context, 'Telecaller', enquiry.id),
-                 style: TextButton.styleFrom(
-                  foregroundColor: Theme.of(context).appBarTheme.foregroundColor,
+                onPressed: () =>
+                    _showUserSelectionDialog(context, 'Telecaller', enquiry.id),
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(
+                    context,
+                  ).appBarTheme.foregroundColor,
                 ),
               ),
             );
           }
         }
 
-        // --- Build Scaffold ---
         return Scaffold(
           appBar: AppBar(
             leading: const BackButtonIos(),
             title: const Text('Enquiry Details'),
-            backgroundColor: Colors.white,
-            foregroundColor: Colors.black,
             elevation: 1,
-            actions: appBarActions.isEmpty ? null : appBarActions, // Add dynamic actions
+            actions: appBarActions.isEmpty ? null : appBarActions,
           ),
           body: snapshot.connectionState == ConnectionState.waiting
               ? const Center(child: CircularProgressIndicator())
               : snapshot.hasError
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Text('Failed to load enquiry: ${snapshot.error}'),
-                      ),
-                    )
-                  : snapshot.hasData
-                      ? RefreshIndicator( // Add RefreshIndicator
-                          onRefresh: _refreshEnquiryData,
-                          child: _buildDetailsView(context, enquiry!),
-                        )
-                      : const Center(child: Text('No enquiry data found.')),
-          floatingActionButton: enquiry != null // Only show FAB if enquiry loaded
-              ? FloatingActionButton.extended(
-                  onPressed: () => _showAddFollowUpSheet(context, enquiry),
-                  icon: const Icon(Icons.add_comment_outlined),
-                  label: const Text('Add Follow-up'),
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Text('Failed to load enquiry: ${snapshot.error}'),
+                  ),
+                )
+              : snapshot.hasData
+              ? RefreshIndicator(
+                  onRefresh: _refreshEnquiryData,
+                  child: _buildDetailsView(context, enquiry!),
+                )
+              : const Center(child: Text('No enquiry data found.')),
+          floatingActionButton: enquiry != null
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    FloatingActionButton.extended(
+                      label: const Text('Edit Enquiry'),
+                      icon: Icon(Icons.edit_outlined),
+                      heroTag: 'enquiryEdit',
+                      tooltip: 'Edit Enquiry',
+                      onPressed: () => _goToEditPage(context, enquiry),
+                    ),
+                    const SizedBox(height: 16),
+                    // New History FAB
+                    FloatingActionButton(
+                      heroTag: 'historyFab', // Added unique HeroTag
+                      onPressed: () {
+                        context.push(
+                          '/follow-ups/${enquiry.id}',
+                          extra: fullName,
+                        );
+                      },
+                      tooltip: 'View Follow-up History',
+                      child: const Icon(Icons.history_outlined),
+                    ),
+                    const SizedBox(height: 16),
+                    // Existing Add Follow-up FAB
+                    FloatingActionButton.extended(
+                      heroTag: 'addFollowUpFab', // Added unique HeroTag
+                      onPressed: () => _showAddFollowUpSheet(context, enquiry),
+                      icon: const Icon(Icons.add_comment_outlined),
+                      label: const Text('Add Follow-up'),
+                    ),
+                  ],
                 )
               : null,
         );
@@ -199,9 +256,9 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
     );
   }
 
-Widget _buildDetailsView(BuildContext context, Enquiry enquiry) {
+  Widget _buildDetailsView(BuildContext context, Enquiry enquiry) {
     return SingleChildScrollView(
-       physics: const AlwaysScrollableScrollPhysics(),
+      physics: const AlwaysScrollableScrollPhysics(),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -226,7 +283,7 @@ Widget _buildDetailsView(BuildContext context, Enquiry enquiry) {
               icon: Icons.person_outline,
               details: {
                 'Date of Birth': enquiry.dateOfBirth,
-                'School': enquiry.school,
+                'School': enquiry.schoolName,
                 'Address': enquiry.address,
                 'Father\'s Occupation': enquiry.fatherOccupation,
               },
@@ -237,23 +294,19 @@ Widget _buildDetailsView(BuildContext context, Enquiry enquiry) {
               icon: Icons.admin_panel_settings_outlined,
               details: {
                 'Source': enquiry.sourceName,
-                // --- PASS THE WHOLE MAP ---
-                'Assigned Counsellor': enquiry.assignedToCounsellorDetails, // Pass Map
-                'Assigned Telecaller': enquiry.assignedToTelecallerDetails, // Pass Map
-                // --- END CHANGE ---
-                'Created At': enquiry.createdAt.split('T').first,
+                'Assigned Counsellor': enquiry.assignedToCounsellorDetails,
+                'Assigned Telecaller': enquiry.assignedToTelecallerDetails,
+                'Registered On': enquiry.createdAt.split('T').first,
               },
             ),
-            const SizedBox(height: 80), // Padding for FAB
+            const SizedBox(height: 80),
           ],
         ),
       ),
     );
   }
 
-  // --- Helper Widgets (_buildHeader, _buildContactCard, etc.) remain the same ---
-  // ... Paste your existing helper widgets here ...
-   Widget _buildHeader(BuildContext context, Enquiry enquiry) {
+  Widget _buildHeader(BuildContext context, Enquiry enquiry) {
     final fullName = '${enquiry.firstName} ${enquiry.lastName ?? ''}';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -282,7 +335,7 @@ Widget _buildDetailsView(BuildContext context, Enquiry enquiry) {
                 avatar: const Icon(Icons.thermostat_outlined, size: 18),
                 backgroundColor: _getTemperatureColor(
                   enquiry.leadTemperature!,
-                ).withAlpha(25), // Use withAlpha for better opacity control
+                ).withAlpha(25),
                 labelStyle: TextStyle(
                   color: _getTemperatureColor(enquiry.leadTemperature!),
                 ),
@@ -313,21 +366,23 @@ Widget _buildDetailsView(BuildContext context, Enquiry enquiry) {
               value: enquiry.phoneNumber,
               label: 'Primary Phone',
             ),
-            if (enquiry.email != null && enquiry.email!.isNotEmpty) // Check if not empty
+            if (enquiry.email != null && enquiry.email!.isNotEmpty)
               _buildContactTile(
                 icon: Icons.email_outlined,
                 value: enquiry.email!,
                 label: 'Email',
               ),
-            if (enquiry.fatherPhoneNumber != null && enquiry.fatherPhoneNumber!.isNotEmpty)
+            if (enquiry.fatherPhoneNumber != null &&
+                enquiry.fatherPhoneNumber!.isNotEmpty)
               _buildContactTile(
                 icon: Icons.phone_android_outlined,
                 value: enquiry.fatherPhoneNumber!,
                 label: "Father's Phone",
               ),
-             if (enquiry.motherPhoneNumber != null && enquiry.motherPhoneNumber!.isNotEmpty)
+            if (enquiry.motherPhoneNumber != null &&
+                enquiry.motherPhoneNumber!.isNotEmpty)
               _buildContactTile(
-                icon: Icons.phone_android_outlined, // Consider a different icon?
+                icon: Icons.phone_android_outlined,
                 value: enquiry.motherPhoneNumber!,
                 label: "Mother's Phone",
               ),
@@ -346,19 +401,22 @@ Widget _buildDetailsView(BuildContext context, Enquiry enquiry) {
       leading: Icon(icon, color: Colors.blueGrey),
       title: Text(value),
       subtitle: Text(label),
-      dense: true, // Make tiles slightly smaller
+      dense: true,
     );
   }
 
   Widget _buildInfoCard({
     required String title,
     required IconData icon,
-    // Change the Map value type to dynamic? to accept Maps or Strings
     required Map<String, dynamic> details,
   }) {
-    // Filter out null or empty values (keep Maps even if empty for structure)
     final validDetails = details.entries
-        .where((entry) => entry.value != null && (entry.value is Map || (entry.value is String && entry.value!.isNotEmpty)))
+        .where(
+          (entry) =>
+              entry.value != null &&
+              (entry.value is Map ||
+                  (entry.value is String && entry.value!.isNotEmpty)),
+        )
         .toList();
 
     if (validDetails.isEmpty) {
@@ -387,48 +445,50 @@ Widget _buildDetailsView(BuildContext context, Enquiry enquiry) {
               ],
             ),
             const Divider(height: 20, thickness: 0.5),
-             ...validDetails.map((entry) {
-                // --- MODIFICATION START ---
-                Widget valueWidget;
-                if (entry.value is Map) {
-                  // Assume it's the UserProfileSummary data
-                  final userData = entry.value as Map<String, dynamic>;
-                  final name = userData['full_name'] ?? 'N/A';
-                  final role = userData['role'] ?? '';
-                  valueWidget = Text(
-                    '$name ${role.isNotEmpty ? '($role)' : ''}', // Display name (Role)
-                    style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
-                  );
-                } else {
-                  // Treat as String
-                  valueWidget = Text(
-                    entry.value?.toString() ?? 'N/A', // Handle potential non-strings just in case
-                    style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
-                  );
-                }
-                // --- MODIFICATION END ---
-
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10.0),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: Text(
-                          '${entry.key}:',
-                          style: const TextStyle(color: Colors.black54, fontSize: 14),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        flex: 3,
-                        child: valueWidget, // Use the determined value widget
-                      ),
-                    ],
+            ...validDetails.map((entry) {
+              Widget valueWidget;
+              if (entry.value is Map) {
+                final userData = entry.value as Map<String, dynamic>;
+                final name = userData['full_name'] ?? 'N/A';
+                final role = userData['role'] ?? '';
+                valueWidget = Text(
+                  '$name ${role.isNotEmpty ? '($role)' : ''}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
                   ),
                 );
-              }),
+              } else {
+                valueWidget = Text(
+                  entry.value?.toString() ?? 'N/A',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
+                  ),
+                );
+              }
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        '${entry.key}:',
+                        style: const TextStyle(
+                          color: Colors.black54,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(flex: 3, child: valueWidget),
+                  ],
+                ),
+              );
+            }),
           ],
         ),
       ),
@@ -444,16 +504,13 @@ Widget _buildDetailsView(BuildContext context, Enquiry enquiry) {
       case 'cold':
         return Colors.blue.shade700;
       default:
-        // Use a less prominent default color
         return Colors.grey.shade600;
     }
   }
 }
 
-
-// --- NEW: User Selection Dialog Widget ---
 class _UserSelectionDialog extends StatefulWidget {
-  final String role; // 'Counsellor' or 'Telecaller'
+  final String role;
   final EnquiryService enquiryService;
 
   const _UserSelectionDialog({
@@ -502,53 +559,51 @@ class _UserSelectionDialogState extends State<_UserSelectionDialog> {
       if (mounted) {
         setState(() {
           _users = fetchedUsers;
-          _filteredUsers = fetchedUsers; // Initially show all fetched
+          _filteredUsers = fetchedUsers;
           _isLoading = false;
         });
       }
     } catch (e) {
-       if (mounted) {
-         setState(() {
-           _errorMessage = 'Error fetching users: $e';
-           _isLoading = false;
-         });
-       }
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Error fetching users: $e';
+          _isLoading = false;
+        });
+      }
     }
   }
 
   void _onSearchChanged() {
-     // Basic debounce to avoid excessive API calls while typing
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(milliseconds: 400), () {
-       // Filter locally if already fetched all, otherwise refetch with query
       final query = _searchController.text.toLowerCase();
-       setState(() {
-         _filteredUsers = _users.where((user) {
-            // Assuming user map has 'name' or 'full_name'
-           final name = (user['full_name'] ?? user['username'] ?? '').toLowerCase();
-           return name.contains(query);
-         }).toList();
-       });
-       // OR: If you expect too many users, call _fetchUsers(query: query);
+      setState(() {
+        _filteredUsers = _users.where((user) {
+          final name = (user['full_name'] ?? user['username'] ?? '')
+              .toLowerCase();
+          return name.contains(query);
+        }).toList();
+      });
     });
   }
-
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text('Assign ${widget.role}'),
       content: SizedBox(
-        width: double.maxFinite, // Use available width
+        width: double.maxFinite,
         child: Column(
-          mainAxisSize: MainAxisSize.min, // Fit content height
+          mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: _searchController,
               decoration: InputDecoration(
                 labelText: 'Search by name...',
                 prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12),
               ),
             ),
@@ -559,35 +614,39 @@ class _UserSelectionDialogState extends State<_UserSelectionDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(), // Close dialog, return null
+          onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
       ],
     );
   }
 
-   Widget _buildUserList() {
+  Widget _buildUserList() {
     if (_isLoading) {
       return const Padding(
-          padding: EdgeInsets.symmetric(vertical: 20.0),
-          child: Center(child: CircularProgressIndicator()));
+        padding: EdgeInsets.symmetric(vertical: 20.0),
+        child: Center(child: CircularProgressIndicator()),
+      );
     }
     if (_errorMessage != null) {
       return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 20.0),
-          child: Text(_errorMessage!, style: const TextStyle(color: Colors.red)));
+        padding: const EdgeInsets.symmetric(vertical: 20.0),
+        child: Text(_errorMessage!, style: const TextStyle(color: Colors.red)),
+      );
     }
     if (_filteredUsers.isEmpty) {
-       return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 20.0),
-          child: Text(_searchController.text.isEmpty
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20.0),
+        child: Text(
+          _searchController.text.isEmpty
               ? 'No ${widget.role}s found.'
-              : 'No ${widget.role}s found matching "${_searchController.text}".'));
+              : 'No ${widget.role}s found matching "${_searchController.text}".',
+        ),
+      );
     }
 
-    // Use SizedBox to constrain the height of the ListView
     return SizedBox(
-      height: 300, // Adjust height as needed
+      height: 300,
       child: ListView.builder(
         shrinkWrap: true,
         itemCount: _filteredUsers.length,
@@ -595,14 +654,13 @@ class _UserSelectionDialogState extends State<_UserSelectionDialog> {
           final details = _filteredUsers[index];
           final user = details['user'];
           logger.d(user);
-          // Adjust keys based on your API response ('full_name', 'username', etc.)
-          final userName = user['full_name'] ?? user['username'] ?? 'Unnamed User';
-          final userId = details['id']; // Ensure 'id' is present
+          final userName =
+              user['full_name'] ?? user['username'] ?? 'Unnamed User';
+          final userId = details['id'];
 
           return ListTile(
             title: Text(userName),
             onTap: () {
-              // Close the dialog and return the selected user ID
               Navigator.of(context).pop(userId);
             },
           );

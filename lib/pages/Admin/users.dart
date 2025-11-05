@@ -1,6 +1,7 @@
 import 'package:dreamvision/widgets/back_button.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:logger/logger.dart';
 
 import '../../services/admin_user.dart';
 
@@ -55,6 +56,7 @@ class _UserListPageState extends State<UserListPage> {
   List<User> _filteredUsers = [];
   bool _isLoading = true;
   String? _error;
+  Logger logger = Logger();
 
   @override
   void initState() {
@@ -75,8 +77,8 @@ class _UserListPageState extends State<UserListPage> {
 
     try {
       final responseData = await _adminUserService.listUsers(); // Correctly call the method
+      logger.d(responseData);
       
-      // ✅ FIX: The .map() function should be called directly on the list.
       final users = responseData
           .map((userData) => User.fromJson(userData as Map<String, dynamic>))
           .toList();

@@ -268,7 +268,7 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
     }
 
     return DropdownButtonFormField<int>(
-      value: _selectedStatusId,
+      initialValue: _selectedStatusId,
       decoration: const InputDecoration(
         labelText: 'New Status',
         border: OutlineInputBorder(),

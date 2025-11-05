@@ -19,8 +19,6 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
 
   late Future<void> _dashboardDataFuture;
   List<Enquiry> _recentEnquiries = [];
-
-  // 2. The data source list now uses the public 'ChartData' class
   List<ChartData> _chartDataSource = [];
 
   @override
@@ -29,18 +27,17 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
     _dashboardDataFuture = _fetchDashboardData();
   }
 
-  /// Fetches both recent enquiries (for the list) and the full status summary (for the chart).
   Future<void> _fetchDashboardData() async {
     try {
-      // Use Future.wait to run both API calls concurrently for speed
       final results = await Future.wait([
         _enquiryService.getRecentEnquiries(),
         _enquiryService.getEnquiryStatusSummary(),
       ]);
 
-      // Process the results from Future.wait
-      final List<dynamic> recentEnquiryData = results[0];
-      final List<dynamic> chartSummaryData = results[1];
+      final List<dynamic> recentEnquiryData = results[0] as List<dynamic>;
+      final Map<String, dynamic> summaryData =
+          results[1] as Map<String, dynamic>;
+      final List<dynamic> chartSummaryData = summaryData['chart_data'] ?? [];
 
       final parsedEnquiries = recentEnquiryData
           .map((data) => Enquiry.fromJson(data))
@@ -58,6 +55,7 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
       throw Exception('Could not load dashboard data. Please try again.');
     }
   }
+
   List<ChartData> _buildChartDataFromSummary(List<dynamic> summaryData) {
     if (summaryData.isEmpty) {
       return [];
@@ -72,7 +70,6 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
       final status = item['status'] as String;
       final count = item['count'] as int;
       final percentage = total > 0 ? (count / total) * 100 : 0.0;
-      // 4. Use the public ChartData class
       return ChartData(status, percentage, _getStatusColor(status));
     }).toList();
   }
@@ -174,7 +171,6 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     EnquiryStatusChartCard(chartDataSource: _chartDataSource),
-
                     const SizedBox(height: 24),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -210,9 +206,6 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
       ),
     );
   }
-
-  // --- 6. REMOVED _buildAnalyticsCharts() ---
-  // --- 7. REMOVED _buildLegendItem() ---
 
   Widget _buildEnquiryList() {
     if (_recentEnquiries.isEmpty) {

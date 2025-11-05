@@ -4,65 +4,7 @@ import 'package:dreamvision/widgets/back_button.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-// The Enquiry model is needed for this page to function.
-// In a real app, this would be in its own file (e.g., models/enquiry_model.dart)
-class Enquiry {
-  final int id;
-  final String? school;
-  final List<dynamic> interactions;
-  final List<dynamic> followUps;
-  final String? assignedToCounsellorDetails;
-  final String? assignedToTelecallerDetails;
-  final String? currentStatusName;
-  final String? sourceName;
-  final String firstName;
-  final String? middleName;
-  final String? lastName;
-  final String? dateOfBirth;
-  final String phoneNumber;
-  final String? email;
-  final String? leadTemperature;
-  // Add other fields as needed for the list item if you want to display more info
-  
-  Enquiry({
-    required this.id,
-    this.school,
-    required this.interactions,
-    required this.followUps,
-    this.assignedToCounsellorDetails,
-    this.assignedToTelecallerDetails,
-    this.currentStatusName,
-    this.sourceName,
-    required this.firstName,
-    this.middleName,
-    this.lastName,
-    this.dateOfBirth,
-    required this.phoneNumber,
-    this.email,
-    this.leadTemperature,
-  });
-
-  factory Enquiry.fromJson(Map<String, dynamic> json) {
-    return Enquiry(
-      id: json['id'],
-      school: json['school'],
-      interactions: json['interactions'] ?? [],
-      followUps: json['follow_ups'] ?? [],
-      assignedToCounsellorDetails: json['assigned_to_counsellor_details'],
-      assignedToTelecallerDetails: json['assigned_to_telecaller_details'],
-      currentStatusName: json['current_status_name'],
-      sourceName: json['source_name'],
-      firstName: json['first_name'] ?? '',
-      middleName: json['middle_name'],
-      lastName: json['last_name'],
-      dateOfBirth: json['date_of_birth'],
-      phoneNumber: json['phone_number'] ?? 'N/A',
-      email: json['email'],
-      leadTemperature: json['lead_temperature'],
-    );
-  }
-}
-
+import '../../models/enquiry_model.dart';
 
 class AllEnquiriesPage extends StatefulWidget {
   const AllEnquiriesPage({super.key});
@@ -88,7 +30,7 @@ class _AllEnquiriesPageState extends State<AllEnquiriesPage> {
   @override
   void initState() {
     super.initState();
-    _fetchEnquiries();
+    _fetchEnquiries(page: 1); // Pass page 1
     _scrollController.addListener(_onScroll);
     _searchController.addListener(_onSearchChanged);
   }
@@ -104,10 +46,11 @@ class _AllEnquiriesPageState extends State<AllEnquiriesPage> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200 &&
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200 &&
         _hasNextPage &&
         !_isLoadingMore) {
-      _fetchEnquiries();
+      _fetchEnquiries(page: _currentPage + 1); // Pass next page
     }
   }
 
@@ -123,24 +66,39 @@ class _AllEnquiriesPageState extends State<AllEnquiriesPage> {
     });
   }
 
-  Future<void> _fetchEnquiries() async {
+  Future<void> _fetchEnquiries({int page = 1}) async {
     if (_isLoadingMore) return;
     setState(() {
       _isLoadingMore = true;
-      if (_isFirstLoad) _error = null;
+      if (page == 1) {
+        _isFirstLoad = true;
+        _error = null;
+      }
     });
 
     try {
+      // --- THIS IS THE FIX ---
+      // Use searchEnquiries if searching,
+      // otherwise use the main getEnquiries
       final response = _searchQuery.isEmpty
-          ? await _enquiryService.getEnquiries(page: _currentPage)
-          : await _enquiryService.searchEnquiries(query: _searchQuery, page: _currentPage);
-      
+          ? await _enquiryService.getEnquiries(page: page)
+          : await _enquiryService.searchEnquiries(
+              query: _searchQuery,
+              page: page,
+            );
+      // --- END FIX ---
+
       final List<dynamic> results = response['results'];
-      final newEnquiries = results.map((data) => Enquiry.fromJson(data)).toList();
+      final newEnquiries = results
+          .map((data) => Enquiry.fromJson(data))
+          .toList();
 
       setState(() {
+        if (page == 1) {
+          _enquiries.clear();
+        }
         _enquiries.addAll(newEnquiries);
-        _currentPage++;
+        _currentPage = page;
         _hasNextPage = response['next'] != null;
       });
     } catch (e) {
@@ -155,12 +113,10 @@ class _AllEnquiriesPageState extends State<AllEnquiriesPage> {
 
   Future<void> _refresh() async {
     setState(() {
-      _enquiries.clear();
       _currentPage = 1;
       _hasNextPage = true;
-      _isFirstLoad = true;
     });
-    await _fetchEnquiries();
+    await _fetchEnquiries(page: 1);
   }
 
   @override
@@ -172,7 +128,10 @@ class _AllEnquiriesPageState extends State<AllEnquiriesPage> {
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(60.0),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16.0,
+              vertical: 8.0,
+            ),
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
@@ -216,7 +175,13 @@ class _AllEnquiriesPageState extends State<AllEnquiriesPage> {
         child: ListView(
           children: [
             SizedBox(height: MediaQuery.of(context).size.height * 0.2),
-            Center(child: Text(_searchQuery.isEmpty ? 'No enquiries found.' : 'No results for "$_searchQuery"')),
+            Center(
+              child: Text(
+                _searchQuery.isEmpty
+                    ? 'No enquiries found.'
+                    : 'No results for "$_searchQuery"',
+              ),
+            ),
           ],
         ),
       );
@@ -248,30 +213,43 @@ class _EnquiryListItem extends StatelessWidget {
 
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
-      case 'interested': return Colors.blue.shade600;
-      case 'converted': return Colors.green.shade600;
+      case 'interested':
+        return Colors.blue.shade600;
+      case 'converted':
+        return Colors.green.shade600;
       case 'needs follow-up':
-      case 'follow-up': return Colors.orange.shade600;
-      case 'closed': return Colors.grey.shade600;
-      default: return Colors.purple.shade600;
+      case 'follow-up':
+        return Colors.orange.shade600;
+      case 'closed':
+        return Colors.grey.shade600;
+      default:
+        return Colors.purple.shade600;
     }
   }
 
   IconData _getTempIcon(String? temp) {
     switch (temp?.toLowerCase()) {
-      case 'hot': return Icons.local_fire_department;
-      case 'warm': return Icons.wb_sunny;
-      case 'cold': return Icons.ac_unit;
-      default: return Icons.device_thermostat;
+      case 'hot':
+        return Icons.local_fire_department;
+      case 'warm':
+        return Icons.wb_sunny;
+      case 'cold':
+        return Icons.ac_unit;
+      default:
+        return Icons.device_thermostat;
     }
   }
-  
+
   Color _getTempColor(String? temp) {
     switch (temp?.toLowerCase()) {
-      case 'hot': return Colors.red;
-      case 'warm': return Colors.orange;
-      case 'cold': return Colors.blue;
-      default: return Colors.grey;
+      case 'hot':
+        return Colors.red;
+      case 'warm':
+        return Colors.orange;
+      case 'cold':
+        return Colors.blue;
+      default:
+        return Colors.grey;
     }
   }
 
@@ -286,7 +264,10 @@ class _EnquiryListItem extends StatelessWidget {
       elevation: 2,
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-        title: Text(fullName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        title: Text(
+          fullName,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4.0),
           child: Column(
@@ -297,9 +278,19 @@ class _EnquiryListItem extends StatelessWidget {
               if (enquiry.leadTemperature != null)
                 Row(
                   children: [
-                    Icon(_getTempIcon(enquiry.leadTemperature), size: 16, color: _getTempColor(enquiry.leadTemperature)),
+                    Icon(
+                      _getTempIcon(enquiry.leadTemperature),
+                      size: 16,
+                      color: _getTempColor(enquiry.leadTemperature),
+                    ),
                     const SizedBox(width: 4),
-                    Text(enquiry.leadTemperature!, style: TextStyle(color: _getTempColor(enquiry.leadTemperature), fontWeight: FontWeight.w500)),
+                    Text(
+                      enquiry.leadTemperature!,
+                      style: TextStyle(
+                        color: _getTempColor(enquiry.leadTemperature),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                   ],
                 ),
             ],
@@ -311,7 +302,11 @@ class _EnquiryListItem extends StatelessWidget {
             Chip(
               label: Text(
                 status,
-                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               backgroundColor: _getStatusColor(status),
               padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -320,10 +315,7 @@ class _EnquiryListItem extends StatelessWidget {
               icon: const Icon(Icons.history, color: Colors.blueGrey),
               tooltip: 'View Follow-up History',
               onPressed: () {
-                context.push(
-                  '/follow-ups/${enquiry.id}',
-                  extra: fullName, // Pass the name for the AppBar title
-                );
+                context.push('/follow-ups/${enquiry.id}', extra: fullName);
               },
             ),
           ],

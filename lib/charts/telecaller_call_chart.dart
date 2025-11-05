@@ -1,13 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
-import 'dart:math';
+import 'package:dreamvision/services/telecaller_service.dart';
 
-// Data model for the chart
-class _CallChartData {
-  _CallChartData(this.date, this.calls);
+class _StackedCallData {
+  _StackedCallData(this.date, this.followUpsToday, this.cnrAndDone);
   final DateTime date;
-  final int calls;
+  final int followUpsToday;
+  final int cnrAndDone;
+
+  factory _StackedCallData.fromJson(Map<String, dynamic> json) {
+    return _StackedCallData(
+      DateTime.parse(json['date']),
+      json['followups_today'] as int,
+      json['cnr_and_done'] as int,
+    );
+  }
 }
 
 class TelecallerCallChart extends StatefulWidget {
@@ -19,43 +27,51 @@ class TelecallerCallChart extends StatefulWidget {
 
 class _TelecallerCallChartState extends State<TelecallerCallChart> {
   late DateTimeRange _selectedDateRange;
-  late List<_CallChartData> _allCallData;
-  List<_CallChartData> _filteredChartData = [];
+  List<_StackedCallData> _chartData = [];
+
+  late final TelecallerService _service;
+  bool _isLoading = true;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _allCallData = _generateDummyCallData();
+    _service = TelecallerService();
 
     final now = DateTime.now();
     _selectedDateRange = DateTimeRange(
       start: now.subtract(const Duration(days: 6)),
       end: now,
     );
-    _filterData();
+
+    _fetchChartData();
   }
 
-  List<_CallChartData> _generateDummyCallData() {
-    final random = Random();
-    final today = DateTime.now();
-    return List.generate(365, (index) {
-      final date = today.subtract(Duration(days: index));
-      final calls = 20 + random.nextInt(45);
-      return _CallChartData(date, calls);
-    });
-  }
-
-  void _filterData() {
+  Future<void> _fetchChartData() async {
     setState(() {
-      _filteredChartData = _allCallData.where((data) {
-        final startDate = _selectedDateRange.start;
-        // Set end date to end of the day
-        final endDate = DateTime(_selectedDateRange.end.year,
-            _selectedDateRange.end.month, _selectedDateRange.end.day, 23, 59, 59);
-        return !data.date.isBefore(startDate) && !data.date.isAfter(endDate);
-      }).toList();
-      _filteredChartData.sort((a, b) => a.date.compareTo(b.date));
+      _isLoading = true;
+      _errorMessage = null;
     });
+
+    try {
+      final List<dynamic> responseData =
+          await _service.getCallActivityData(_selectedDateRange);
+
+      final List<_StackedCallData> data = responseData
+          .map((json) =>
+              _StackedCallData.fromJson(json as Map<String, dynamic>))
+          .toList();
+
+      setState(() {
+        _chartData = data;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = e.toString();
+      });
+    }
   }
 
   Future<void> _selectDateRange(BuildContext context) async {
@@ -69,8 +85,8 @@ class _TelecallerCallChartState extends State<TelecallerCallChart> {
     if (picked != null && picked != _selectedDateRange) {
       setState(() {
         _selectedDateRange = picked;
-        _filterData();
       });
+      _fetchChartData();
     }
   }
 
@@ -104,11 +120,45 @@ class _TelecallerCallChartState extends State<TelecallerCallChart> {
               ],
             ),
             const SizedBox(height: 16),
-            _buildAnalyticsChart(),
+            _buildChartContent(),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildChartContent() {
+    if (_isLoading) {
+      return const SizedBox(
+        height: 220,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return SizedBox(
+        height: 220,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(
+              'Failed to load chart data:\n$_errorMessage',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_chartData.isEmpty) {
+      return const SizedBox(
+        height: 220,
+        child: Center(child: Text('No data for the selected range.')),
+      );
+    }
+
+    return _buildAnalyticsChart();
   }
 
   Widget _buildAnalyticsChart() {
@@ -116,16 +166,29 @@ class _TelecallerCallChartState extends State<TelecallerCallChart> {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     final gridLineColor = isDarkMode ? Colors.white24 : Colors.black12;
 
+    final Color followUpsColor = theme.primaryColor.withValues(alpha:0.8);
+    final Color cnrDoneColor = Colors.orange.shade400;
+
     return SizedBox(
       height: 220,
       child: SfCartesianChart(
         plotAreaBorderWidth: 0,
+        legend: const Legend(
+          isVisible: true,
+          position: LegendPosition.bottom,
+          overflowMode: LegendItemOverflowMode.wrap,
+          textStyle: TextStyle(fontSize: 12),
+        ),
         trackballBehavior: TrackballBehavior(
           enable: true,
           activationMode: ActivationMode.singleTap,
-          tooltipSettings: const InteractiveTooltip(
+          tooltipSettings: InteractiveTooltip(
             enable: true,
-            format: 'point.x: point.y calls',
+            format: 'series.name: point.y',
+            color: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+            textStyle: TextStyle(
+              color: isDarkMode ? Colors.white : Colors.black,
+            ),
           ),
         ),
         primaryXAxis: DateTimeAxis(
@@ -133,6 +196,7 @@ class _TelecallerCallChartState extends State<TelecallerCallChart> {
           axisLine: const AxisLine(width: 0),
           edgeLabelPlacement: EdgeLabelPlacement.shift,
           dateFormat: DateFormat.MMMd(),
+          labelStyle: const TextStyle(fontSize: 10),
         ),
         primaryYAxis: NumericAxis(
           isVisible: true,
@@ -140,18 +204,26 @@ class _TelecallerCallChartState extends State<TelecallerCallChart> {
           axisLine: const AxisLine(width: 0),
           numberFormat: NumberFormat.decimalPattern(),
           minimum: 0,
+          labelStyle: const TextStyle(fontSize: 10),
         ),
         series: <CartesianSeries>[
-          ColumnSeries<_CallChartData, DateTime>(
-            dataSource: _filteredChartData,
-            xValueMapper: (_CallChartData data, _) => data.date,
-            yValueMapper: (_CallChartData data, _) => data.calls,
-            color: theme.primaryColor,
-            borderRadius: const BorderRadius.all(Radius.circular(8)),
-            dataLabelSettings: const DataLabelSettings(
-              isVisible: true,
-              textStyle: TextStyle(fontWeight: FontWeight.bold),
-            ),
+          StackedColumnSeries<_StackedCallData, DateTime>(
+            dataSource: _chartData,
+            xValueMapper: (_StackedCallData data, _) => data.date,
+            yValueMapper: (_StackedCallData data, _) => data.followUpsToday,
+            name: 'Follow-ups',
+            color: followUpsColor,
+            borderRadius: const BorderRadius.all(Radius.circular(4)),
+            dataLabelSettings: const DataLabelSettings(isVisible: false),
+          ),
+          StackedColumnSeries<_StackedCallData, DateTime>(
+            dataSource: _chartData,
+            xValueMapper: (_StackedCallData data, _) => data.date,
+            yValueMapper: (_StackedCallData data, _) => data.cnrAndDone,
+            name: 'CNR / Done',
+            color: cnrDoneColor,
+            borderRadius: const BorderRadius.all(Radius.circular(4)),
+            dataLabelSettings: const DataLabelSettings(isVisible: false),
           ),
         ],
       ),

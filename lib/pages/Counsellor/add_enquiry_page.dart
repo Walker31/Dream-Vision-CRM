@@ -1,3 +1,4 @@
+import 'package:dreamvision/models/enquiry_model.dart';
 import 'package:dreamvision/services/enquiry_service.dart';
 import 'package:dreamvision/widgets/back_button.dart';
 import 'package:flutter/material.dart';
@@ -5,7 +6,9 @@ import 'package:intl/intl.dart';
 import 'package:logger/logger.dart';
 
 class AddEnquiryPage extends StatefulWidget {
-  const AddEnquiryPage({super.key});
+  final Enquiry? enquiry;
+
+  const AddEnquiryPage({super.key, this.enquiry});
 
   @override
   State<AddEnquiryPage> createState() => _AddEnquiryPageState();
@@ -27,6 +30,8 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
   // --- Loading States ---
   bool _isLoading = true;
   bool _isSubmitting = false;
+
+  bool get _isEditMode => widget.enquiry != null;
 
   // --- Data & Controllers (same as before) ---
   List<Map<String, dynamic>> _sources = [];
@@ -62,7 +67,12 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
   @override
   void initState() {
     super.initState();
-    _loadInitialData();
+    // 4. MODIFIED: Load data first, then pre-fill if in edit mode
+    _loadInitialData().then((_) {
+      if (_isEditMode && mounted) {
+        _prefillData(widget.enquiry!);
+      }
+    });
   }
 
   @override
@@ -90,7 +100,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
     super.dispose();
   }
 
-  // --- Data Loading (same as before) ---
+  // --- Data Loading ---
   Future<void> _loadInitialData() async {
     try {
       final results = await Future.wait([
@@ -106,6 +116,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
           _isLoading = false;
         });
       }
+      // Prefill logic is now in initState, after this future completes
     } catch (e) {
       _logger.e('Failed to load initial data: $e');
       if (mounted) {
@@ -118,6 +129,97 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
         Navigator.of(context).pop();
       }
     }
+  }
+
+  // 5. NEW: Method to pre-fill all form data from an existing enquiry
+  void _prefillData(Enquiry enquiry) {
+    setState(() {
+      // --- Step 1 Fields ---
+      _firstNameController.text = enquiry.firstName;
+      _middleNameController.text = enquiry.middleName ?? '';
+      _lastNameController.text = enquiry.lastName ?? '';
+      _phoneController.text = enquiry.phoneNumber;
+      _emailController.text = enquiry.email ?? '';
+      _addressController.text = enquiry.address ?? '';
+      
+      // --- ✅ BUG FIX HERE ---
+      _pincodeController.text = enquiry.pincode?.toString() ?? '';
+      // --- ✅ END BUG FIX ---
+
+      _fatherPhoneController.text = enquiry.fatherPhoneNumber ?? '';
+      _motherPhoneController.text = enquiry.motherPhoneNumber ?? '';
+      _fatherOccupationController.text = enquiry.fatherOccupation ?? '';
+
+      if (enquiry.dateOfBirth != null) {
+        _selectedDob = DateTime.tryParse(enquiry.dateOfBirth!);
+      }
+
+      // --- Step 2 Fields ---
+      _enquiringForStandard = enquiry.enquiringForStandard;
+      _enquiringForBoard = enquiry.enquiringForBoard;
+
+      // Handle School
+      final school = _schools.firstWhere(
+        (s) => s['name'] == enquiry.schoolName,
+        orElse: () => {},
+      );
+      if (school.isNotEmpty) {
+        _selectedSchoolId = school['id'];
+      } else if (enquiry.schoolName != null && enquiry.schoolName!.isNotEmpty) {
+        // It's an "Other" school
+        _selectedSchoolId = _otherSchoolId;
+        _otherSchoolController.text = enquiry.schoolName!;
+      }
+
+      // Handle Exams (assuming enquiringForExam is a comma-separated string)
+      if (enquiry.enquiringForExam != null) {
+        _selectedExams.addAll(
+            enquiry.enquiringForExam!.split(', ').where((s) => s.isNotEmpty));
+      }
+
+      // Handle Academics (assuming academicPerformance is List<dynamic> of maps)
+      if (enquiry.academicPerformance != null) {
+        for (var acad in enquiry.academicPerformance!) {
+          _academicForms.add({
+            'standard_level':
+                TextEditingController(text: acad['standard_level']?.toString() ?? ''),
+            'board': TextEditingController(text: acad['board']?.toString() ?? ''),
+            'percentage':
+                TextEditingController(text: acad['percentage']?.toString() ?? ''),
+            'science_marks': TextEditingController(
+                text: acad['science_marks']?.toString() ?? ''),
+            'maths_marks':
+                TextEditingController(text: acad['maths_marks']?.toString() ?? ''),
+            'english_marks': TextEditingController(
+                text: acad['english_marks']?.toString() ?? ''),
+            'isSaved': true, // Start in saved/summary mode
+          });
+        }
+      }
+
+      // --- Step 3 Fields ---
+      _referralController.text = enquiry.referral ?? '';
+      _leadTemperature = enquiry.leadTemperature;
+      _totalFeesController.text = enquiry.totalFeesDecided ?? '';
+      _installmentsController.text =
+          enquiry.installmentsAgreed?.toString() ?? '';
+
+      // Handle Referred By (assuming referredBy is List<String>)
+      _referredBy.addAll(enquiry.referredBy.whereType<String>());
+    
+      // Handle API Dropdowns
+      final source = _sources.firstWhere(
+        (s) => s['name'] == enquiry.sourceName,
+        orElse: () => {},
+      );
+      if (source.isNotEmpty) _sourceId = source['id'];
+
+      final status = _statuses.firstWhere(
+        (s) => s['name'] == enquiry.currentStatusName,
+        orElse: () => {},
+      );
+      if (status.isNotEmpty) _currentStatusId = status['id'];
+    });
   }
 
   // --- Academic Form Management (same as before) ---
@@ -142,7 +244,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
     setState(() => _academicForms.removeAt(index));
   }
 
-  // --- Form Submission (mostly same, collects data from all controllers) ---
+  // --- Form Submission ---
   Future<void> _submitForm() async {
     // Validate the *last* form key before submitting
     if (!_formKeys[_currentPage].currentState!.validate() || _isSubmitting) {
@@ -161,7 +263,8 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
         )['name'];
       }
 
-      final List<Map<String, dynamic>> academicDataList = _academicForms.map((
+      final List<Map<String, dynamic>> academicDataList =
+          _academicForms.map((
         form,
       ) {
         return {
@@ -213,13 +316,20 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
         'academic_performance': academicDataList, // Use corrected key
       };
 
-      await _enquiryService.createEnquiry(enquiryData);
+      // 6. MODIFIED: Call update or create based on edit mode
+      if (_isEditMode) {
+        await _enquiryService.updateEnquiry(widget.enquiry!.id, enquiryData);
+      } else {
+        await _enquiryService.createEnquiry(enquiryData);
+      }
 
       if (mounted) {
-        Navigator.of(context).pop();
+        // 7. MODIFIED: Pop with 'true' to signal success
+        Navigator.of(context).pop(true);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Enquiry submitted successfully!'),
+          SnackBar(
+            content: Text(
+                'Enquiry ${(_isEditMode ? 'updated' : 'submitted')} successfully!'),
             backgroundColor: Colors.green,
           ),
         );
@@ -271,7 +381,10 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
     return Scaffold(
       appBar: AppBar(
         leading: const BackButtonIos(), // Use your custom back button
-        title: Text('New Enquiry (Step ${_currentPage + 1} of 3)'),
+        // 8. MODIFIED: AppBar title changes based on mode
+        title: Text(_isEditMode
+            ? 'Edit Enquiry'
+            : 'New Enquiry (Step ${_currentPage + 1} of 3)'),
         centerTitle: false,
       ),
       body: _isLoading
@@ -524,7 +637,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
         color: Theme.of(context).cardColor,
         border: Border(
           top: BorderSide(
-            color: Colors.grey.withValues(alpha: 0.2),
+            color: Colors.grey.withAlpha(51), // 0.2 alpha
             width: 1.0,
           ),
         ),
@@ -567,10 +680,13 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
                       ),
                     )
                   : const Icon(Icons.arrow_forward_ios, size: 16),
+              // 9. MODIFIED: Button label changes based on mode
               label: Text(
                 _isSubmitting
                     ? 'Saving...'
-                    : (_currentPage == 2 ? 'Submit' : 'Next'),
+                    : (_currentPage == 2
+                        ? (_isEditMode ? 'Update' : 'Submit')
+                        : 'Next'),
               ),
               onPressed: _isSubmitting ? null : _nextPage,
             ),
@@ -648,7 +764,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
         decoration: InputDecoration(
           labelText: label,
           filled: true,
-          fillColor: Colors.grey.withValues(alpha: 0.1),
+          fillColor: Colors.grey.withAlpha(26), // 0.1 alpha
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide.none,
@@ -674,7 +790,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
             labelText: label,
             suffixIcon: const Icon(Icons.calendar_today),
             filled: true,
-            fillColor: Colors.grey.withValues(alpha: 0.1),
+            fillColor: Colors.grey.withAlpha(26), // 0.1 alpha
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide.none,
@@ -701,13 +817,13 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
         decoration: InputDecoration(
           labelText: label,
           filled: true,
-          fillColor: Colors.grey.withValues(alpha: 0.1),
+          fillColor: Colors.grey.withAlpha(26), // 0.1 alpha
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide.none,
           ),
         ),
-        value: value,
+        initialValue: value, // Use 'value' instead of 'initialValue' for clarity
         items: items
             .map(
               (String item) =>
@@ -748,13 +864,13 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
         decoration: InputDecoration(
           labelText: label,
           filled: true,
-          fillColor: Colors.grey.withValues(alpha: 0.1),
+          fillColor: Colors.grey.withAlpha(26), // 0.1 alpha
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide.none,
           ),
         ),
-        value: value,
+        initialValue: value, // Use 'value' instead of 'initialValue'
         items: dropdownItems,
         onChanged: onChanged,
       ),
@@ -796,7 +912,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
               ),
               // Optional: A subtle background for unselected chips
-              backgroundColor: Colors.grey.withValues(alpha: 0.1),
+              backgroundColor: Colors.grey.withAlpha(26), // 0.1 alpha
               onSelected: (selected) {
                 if (selected) {
                   onChanged(option);
@@ -840,7 +956,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
                     : Theme.of(context).textTheme.bodyLarge?.color,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
               ),
-              backgroundColor: Colors.grey.withValues(alpha: 0.1),
+              backgroundColor: Colors.grey.withAlpha(26), // 0.1 alpha
               onSelected: (selected) {
                 setState(() {
                   if (selected) {
@@ -1035,7 +1151,7 @@ class _AcademicFormWidgetState extends State<_AcademicFormWidget> {
         decoration: InputDecoration(
           labelText: label,
           filled: true,
-          fillColor: Colors.grey.withValues(alpha: 0.1), // Consistent fill
+          fillColor: Colors.grey.withAlpha(26), // Consistent fill
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide.none,

@@ -23,6 +23,7 @@ dependencies:
   url_launcher: ^6.3.2
   file_picker: ^10.3.3
   shared_preferences: ^2.5.3
+  dio: ^5.9.0
 
 dev_dependencies:
   flutter_test:

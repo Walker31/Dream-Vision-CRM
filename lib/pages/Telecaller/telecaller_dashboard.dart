@@ -16,69 +16,101 @@ class TelecallerDashboard extends StatefulWidget {
 
 class _TelecallerDashboardState extends State<TelecallerDashboard> {
   final EnquiryService _enquiryService = EnquiryService();
+  final ScrollController _scrollController = ScrollController();
   Logger logger = Logger();
 
-  late Future<void> _dashboardDataFuture;
-  List<Enquiry> _allEnquiries = [];
-  List<Enquiry> _filteredEnquiries = [];
+  List<Enquiry> _enquiries = [];
+  int _currentPage = 1;
+  bool _hasNextPage = true;
+  bool _isLoadingMore = false;
+  bool _isFirstLoad = true;
+  String? _error;
 
-  // Use statuses from your backend
   final List<String> _filters = ['All', 'Interested', 'Follow-up', 'Closed'];
   String _selectedFilter = 'All';
 
   @override
   void initState() {
     super.initState();
-    _dashboardDataFuture = _fetchDashboardData();
+    _fetchEnquiries(page: 1);
+    _scrollController.addListener(_onScroll);
   }
 
-  Future<void> _fetchDashboardData() async {
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200 &&
+        _hasNextPage &&
+        !_isLoadingMore) {
+      _fetchEnquiries(page: _currentPage + 1);
+    }
+  }
+
+  Future<void> _fetchEnquiries({int page = 1}) async {
+    if (_isLoadingMore) return;
+    setState(() {
+      _isLoadingMore = true;
+      if (page == 1) {
+        _isFirstLoad = true;
+        _error = null;
+      }
+    });
+
     try {
-      // In a real app, this would be a dedicated endpoint like
-      // _enquiryService.getEnquiriesForTelecaller()
-      final enquiryData = await _enquiryService.getAllEnquiries();
-      final parsedEnquiries = enquiryData
-          .map((data) => Enquiry.fromJson(data))
-          .toList();
+      final response = await _enquiryService.getTelecallerEnquiries(
+        page: page,
+        status: _selectedFilter == 'All' ? null : _selectedFilter,
+      );
+
+      final List<dynamic> results = response['results'];
+      final newEnquiries =
+          results.map((data) => Enquiry.fromJson(data)).toList();
 
       if (mounted) {
         setState(() {
-          // For this demo, we filter all enquiries that have a telecaller assigned
-          _allEnquiries = parsedEnquiries
-              .where((e) => e.assignedToTelecallerDetails != null)
-              .toList();
-          _filterLeadsList(); // Apply the default filter
+          if (page == 1) {
+            _enquiries = newEnquiries;
+          } else {
+            _enquiries.addAll(newEnquiries);
+          }
+          _currentPage = page;
+          _hasNextPage = response['next'] != null;
         });
       }
     } catch (e) {
       logger.e("Failed to fetch dashboard data: $e");
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Failed to load data: $e"),
-            backgroundColor: Colors.red,
-          ),
-        );
+        setState(() => _error = e.toString());
       }
-      rethrow;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingMore = false;
+          _isFirstLoad = false;
+        });
+      }
     }
   }
 
-  /// Filters the master list of enquiries based on the selected chip
-  void _filterLeadsList() {
-    setState(() {
-      if (_selectedFilter == 'All') {
-        _filteredEnquiries = List.from(_allEnquiries);
-      } else {
-        _filteredEnquiries = _allEnquiries.where((enquiry) {
-          final status = enquiry.currentStatusName ?? 'Unknown';
-          return status.toLowerCase() == _selectedFilter.toLowerCase();
-        }).toList();
-      }
-    });
+  Future<void> _refresh() async {
+    await _fetchEnquiries(page: 1);
   }
 
-  /// Launches the phone dialer
+  void _onFilterChanged(String filter) {
+    if (_selectedFilter == filter) return;
+
+    setState(() {
+      _selectedFilter = filter;
+    });
+    _refresh();
+  }
+
   Future<void> _makePhoneCall(String phoneNumber) async {
     final Uri launchUri = Uri(scheme: 'tel', path: phoneNumber);
     if (await canLaunchUrl(launchUri)) {
@@ -96,14 +128,12 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
     }
   }
 
-  /// Shows the Add Enquiry Follow-up Form
   void _showAddFollowUpForm(BuildContext context, Enquiry enquiry) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) {
-        // Pass the specific enquiry to the sheet
         return AddFollowUpSheet(enquiry: enquiry);
       },
     );
@@ -149,22 +179,8 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _fetchDashboardData,
-        child: FutureBuilder<void>(
-          future: _dashboardDataFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting &&
-                _allEnquiries.isEmpty) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            if (snapshot.hasError) {
-              return Center(child: Text('Error: ${snapshot.error}'));
-            }
-
-            return _buildDashboardContent();
-          },
-        ),
+        onRefresh: _refresh,
+        child: _buildBody(),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
@@ -176,15 +192,31 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
     );
   }
 
-  Widget _buildDashboardContent() {
+  Widget _buildBody() {
+    if (_isFirstLoad && !_isLoadingMore) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_error != null && _enquiries.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('Error: $_error'),
+            const SizedBox(height: 16),
+            ElevatedButton(onPressed: _refresh, child: const Text('Retry')),
+          ],
+        ),
+      );
+    }
+
     return SingleChildScrollView(
-      // This ensures the RefreshIndicator works even when list is short
+      controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Use the imported chart widget
           const TelecallerCallChart(),
           const SizedBox(height: 24),
           const Text(
@@ -200,34 +232,26 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
     );
   }
 
-  // --- WIDGET UPDATED ---
   Widget _buildFilterChips() {
     return Wrap(
       spacing: 8.0,
-      runSpacing: 4.0, // Added runSpacing
+      runSpacing: 4.0,
       children: _filters.map((filter) {
         final bool isSelected = _selectedFilter == filter;
         return FilterChip(
           label: Text(filter),
           selected: isSelected,
-          showCheckmark: false, // Hide the checkmark
-          selectedColor: Theme.of(
-            context,
-          ).primaryColor, // Background for selected
+          showCheckmark: false,
+          selectedColor: Theme.of(context).primaryColor,
           labelStyle: TextStyle(
             color: isSelected
                 ? Colors.white
                 : Theme.of(context).textTheme.bodyLarge?.color,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
           ),
-          backgroundColor: Colors.grey.withAlpha(
-            25,
-          ), // Background for unselected
+          backgroundColor: Colors.grey.withAlpha(25),
           onSelected: (selected) {
-            setState(() {
-              _selectedFilter = filter;
-              _filterLeadsList(); // Re-filter the list
-            });
+            _onFilterChanged(filter);
           },
         );
       }).toList(),
@@ -235,7 +259,7 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
   }
 
   Widget _buildLeadsList() {
-    if (_filteredEnquiries.isEmpty) {
+    if (_enquiries.isEmpty && !_isFirstLoad && !_isLoadingMore) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 32.0),
@@ -250,11 +274,20 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
     return ListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      itemCount: _filteredEnquiries.length,
+      itemCount: _enquiries.length + (_hasNextPage ? 1 : 0),
       itemBuilder: (context, index) {
-        final enquiry = _filteredEnquiries[index];
-        final fullName = '${enquiry.firstName} ${enquiry.lastName ?? ''}'
-            .trim();
+        if (index == _enquiries.length) {
+          return _hasNextPage
+              ? const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              : const SizedBox.shrink();
+        }
+
+        final enquiry = _enquiries[index];
+        final fullName =
+            '${enquiry.firstName} ${enquiry.lastName ?? ''}'.trim();
         final status = enquiry.currentStatusName ?? 'Unknown';
 
         return Card(

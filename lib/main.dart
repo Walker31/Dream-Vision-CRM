@@ -20,6 +20,8 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import 'models/enquiry_model.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
@@ -68,7 +70,10 @@ final GoRouter _router = GoRouter(
   routes: [
     GoRoute(path: '/', builder: (context, state) => const SplashPage()),
     GoRoute(path: '/login', builder: (context, state) => const LoginPage()),
-    GoRoute(path: '/admin', builder: (context, state) => const AdminDashboard()),
+    GoRoute(
+      path: '/admin',
+      builder: (context, state) => const AdminDashboard(),
+    ),
     GoRoute(path: '/users', builder: (context, state) => const UserListPage()),
     GoRoute(path: '/crm', builder: (context, state) => const CRM()),
     GoRoute(
@@ -81,9 +86,17 @@ final GoRouter _router = GoRouter(
     ),
     GoRoute(
       path: '/add-enquiry',
-      builder: (context, state) => const AddEnquiryPage(),
+      builder: (context, state) {
+        // Get the enquiry object from 'extra'
+        final Enquiry? enquiry = state.extra as Enquiry?;
+        // Pass it to the page
+        return AddEnquiryPage(enquiry: enquiry);
+      },
     ),
-    GoRoute(path: '/all-enquiries', builder: (context, state) => const AllEnquiriesPage()),
+    GoRoute(
+      path: '/all-enquiries',
+      builder: (context, state) => const AllEnquiriesPage(),
+    ),
     GoRoute(path: '/settings', builder: (context, state) => const Settings()),
     GoRoute(
       path: '/profile-details',
@@ -112,12 +125,11 @@ final GoRouter _router = GoRouter(
     GoRoute(
       path: '/follow-ups/:enquiryId',
       builder: (context, state) {
-        final enquiryId = int.tryParse(state.pathParameters['enquiryId'] ?? '') ?? 0;
-        final enquiryName = state.extra as String? ?? 'Enquiry'; // Pass name as extra
-        return FollowUpPage(
-          enquiryId: enquiryId,
-          enquiryName: enquiryName,
-        );
+        final enquiryId =
+            int.tryParse(state.pathParameters['enquiryId'] ?? '') ?? 0;
+        final enquiryName =
+            state.extra as String? ?? 'Enquiry'; // Pass name as extra
+        return FollowUpPage(enquiryId: enquiryId, enquiryName: enquiryName);
       },
     ),
   ],
