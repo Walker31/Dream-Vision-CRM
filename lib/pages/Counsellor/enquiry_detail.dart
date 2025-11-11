@@ -2,10 +2,14 @@ import 'package:dreamvision/models/enquiry_model.dart';
 import 'package:dreamvision/services/enquiry_service.dart';
 import 'package:dreamvision/widgets/back_button.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'package:logger/logger.dart';
 import 'dart:async';
 import 'package:go_router/go_router.dart';
+import '../../dialogs/user_selection_dialog.dart';
 import '../Telecaller/follow_up_sheet.dart';
+// Correct import based on the documentation
+import 'package:flutter_expandable_fab/flutter_expandable_fab.dart';
 
 class EnquiryDetailPage extends StatefulWidget {
   final int enquiryId;
@@ -20,6 +24,8 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
   final EnquiryService _enquiryService = EnquiryService();
   late Future<Enquiry> _enquiryFuture;
   final Logger _logger = Logger();
+  // Add a key to control the FAB programmatically (optional, but good practice)
+  final _fabKey = GlobalKey<ExpandableFabState>();
 
   @override
   void initState() {
@@ -52,20 +58,28 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
     });
   }
 
+  // Helper to close the FAB after an action
+  void _closeFab() {
+    final state = _fabKey.currentState;
+    if (state != null && state.isOpen) {
+      state.toggle();
+    }
+  }
+
   void _goToEditPage(BuildContext context, Enquiry enquiry) async {
-    // We expect a bool (true) if the page was saved.
+    _closeFab();
     final bool? result = await context.push<bool>(
-      '/add-enquiry', // This MUST match your GoRouter path for AddEnquiryPage
-      extra: enquiry, // Pass the full enquiry object
+      '/add-enquiry',
+      extra: enquiry,
     );
 
-    // If the edit page returns true, it means we saved, so refresh.
     if (result == true && mounted) {
       _refreshEnquiryData();
     }
   }
 
   void _showAddFollowUpSheet(BuildContext context, Enquiry enquiry) async {
+    _closeFab();
     final bool? didSave = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -80,6 +94,11 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
     }
   }
 
+  void _goToHistoryPage(BuildContext context, int enquiryId, String? fullName) {
+    _closeFab();
+    context.push('/follow-ups/$enquiryId', extra: fullName);
+  }
+
   Future<void> _showUserSelectionDialog(
     BuildContext context,
     String role,
@@ -88,10 +107,7 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
     final selectedUserId = await showDialog<int>(
       context: context,
       builder: (BuildContext context) {
-        return _UserSelectionDialog(
-          role: role,
-          enquiryService: _enquiryService,
-        );
+        return UserSelectionDialog(role: role, enquiryService: _enquiryService);
       },
     );
 
@@ -158,9 +174,7 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
         if (snapshot.connectionState == ConnectionState.done &&
             snapshot.hasData &&
             enquiry != null) {
-          fullName =
-              '${enquiry.firstName} ${enquiry.lastName ?? ''}' // CHANGED: Assigned value here
-                  .trim();
+          fullName = '${enquiry.firstName} ${enquiry.lastName ?? ''}'.trim();
           if (enquiry.assignedToCounsellorDetails == null) {
             appBarActions.add(
               TextButton.icon(
@@ -216,37 +230,43 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
                 )
               : const Center(child: Text('No enquiry data found.')),
           floatingActionButton: enquiry != null
-              ? Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
+              ? SpeedDial(
+                  icon: Icons.add,
+                  activeIcon: Icons.close,
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Colors.white,
+                  overlayColor: Colors.black,
+                  overlayOpacity: 0.4,
+                  spacing: 12,
+                  spaceBetweenChildren: 12,
+                  elevation: 6,
+                  shape: const CircleBorder(),
+
                   children: [
-                    FloatingActionButton.extended(
-                      label: const Text('Edit Enquiry'),
-                      icon: Icon(Icons.edit_outlined),
-                      heroTag: 'enquiryEdit',
-                      tooltip: 'Edit Enquiry',
-                      onPressed: () => _goToEditPage(context, enquiry),
+                    SpeedDialChild(
+                      child: const Icon(Icons.edit_outlined),
+                      backgroundColor: Colors.indigo,
+                      foregroundColor: Colors.white,
+                      label: 'Edit Enquiry',
+                      labelStyle: const TextStyle(fontSize: 14),
+                      onTap: () => _goToEditPage(context, enquiry),
                     ),
-                    const SizedBox(height: 16),
-                    // New History FAB
-                    FloatingActionButton(
-                      heroTag: 'historyFab', // Added unique HeroTag
-                      onPressed: () {
-                        context.push(
-                          '/follow-ups/${enquiry.id}',
-                          extra: fullName,
-                        );
-                      },
-                      tooltip: 'View Follow-up History',
+                    SpeedDialChild(
                       child: const Icon(Icons.history_outlined),
+                      backgroundColor: Colors.teal,
+                      foregroundColor: Colors.white,
+                      label: 'View History',
+                      labelStyle: const TextStyle(fontSize: 14),
+                      onTap: () =>
+                          _goToHistoryPage(context, enquiry.id, fullName),
                     ),
-                    const SizedBox(height: 16),
-                    // Existing Add Follow-up FAB
-                    FloatingActionButton.extended(
-                      heroTag: 'addFollowUpFab', // Added unique HeroTag
-                      onPressed: () => _showAddFollowUpSheet(context, enquiry),
-                      icon: const Icon(Icons.add_comment_outlined),
-                      label: const Text('Add Follow-up'),
+                    SpeedDialChild(
+                      child: const Icon(Icons.add_comment_outlined),
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                      label: 'Add Follow-up',
+                      labelStyle: const TextStyle(fontSize: 14),
+                      onTap: () => _showAddFollowUpSheet(context, enquiry),
                     ),
                   ],
                 )
@@ -299,7 +319,7 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
                 'Registered On': enquiry.createdAt.split('T').first,
               },
             ),
-            const SizedBox(height: 80),
+            const SizedBox(height: 80), // Padding for the FAB
           ],
         ),
       ),
@@ -506,166 +526,5 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
       default:
         return Colors.grey.shade600;
     }
-  }
-}
-
-class _UserSelectionDialog extends StatefulWidget {
-  final String role;
-  final EnquiryService enquiryService;
-
-  const _UserSelectionDialog({
-    required this.role,
-    required this.enquiryService,
-  });
-
-  @override
-  State<_UserSelectionDialog> createState() => _UserSelectionDialogState();
-}
-
-class _UserSelectionDialogState extends State<_UserSelectionDialog> {
-  final TextEditingController _searchController = TextEditingController();
-  List<dynamic> _users = [];
-  List<dynamic> _filteredUsers = [];
-  bool _isLoading = true;
-  String? _errorMessage;
-  Timer? _debounce;
-  Logger logger = Logger();
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchUsers();
-    _searchController.addListener(_onSearchChanged);
-  }
-
-  @override
-  void dispose() {
-    _searchController.removeListener(_onSearchChanged);
-    _searchController.dispose();
-    _debounce?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _fetchUsers({String? query}) async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-    try {
-      final fetchedUsers = await widget.enquiryService.getAssignableUsers(
-        role: widget.role,
-        query: query,
-      );
-      if (mounted) {
-        setState(() {
-          _users = fetchedUsers;
-          _filteredUsers = fetchedUsers;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = 'Error fetching users: $e';
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  void _onSearchChanged() {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 400), () {
-      final query = _searchController.text.toLowerCase();
-      setState(() {
-        _filteredUsers = _users.where((user) {
-          final name = (user['full_name'] ?? user['username'] ?? '')
-              .toLowerCase();
-          return name.contains(query);
-        }).toList();
-      });
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text('Assign ${widget.role}'),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                labelText: 'Search by name...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildUserList(),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildUserList() {
-    if (_isLoading) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 20.0),
-        child: Center(child: CircularProgressIndicator()),
-      );
-    }
-    if (_errorMessage != null) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 20.0),
-        child: Text(_errorMessage!, style: const TextStyle(color: Colors.red)),
-      );
-    }
-    if (_filteredUsers.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 20.0),
-        child: Text(
-          _searchController.text.isEmpty
-              ? 'No ${widget.role}s found.'
-              : 'No ${widget.role}s found matching "${_searchController.text}".',
-        ),
-      );
-    }
-
-    return SizedBox(
-      height: 300,
-      child: ListView.builder(
-        shrinkWrap: true,
-        itemCount: _filteredUsers.length,
-        itemBuilder: (context, index) {
-          final details = _filteredUsers[index];
-          final user = details['user'];
-          logger.d(user);
-          final userName =
-              user['full_name'] ?? user['username'] ?? 'Unnamed User';
-          final userId = details['id'];
-
-          return ListTile(
-            title: Text(userName),
-            onTap: () {
-              Navigator.of(context).pop(userId);
-            },
-          );
-        },
-      ),
-    );
   }
 }

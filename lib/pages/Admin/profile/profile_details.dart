@@ -66,14 +66,42 @@ class EmployeeDetailsPage extends StatelessWidget {
               icon: Icons.person_outline,
               title: 'Personal Information',
               details: [
-                _buildDetailRow(context, Icons.badge_outlined, 'Staff ID', user.staffId),
-                _buildDetailRow(context, Icons.person, 'First Name', user.firstName),
-                _buildDetailRow(context, Icons.person_outline, 'Last Name', user.lastName),
-                _buildDetailRow(context, Icons.email_outlined, 'Email', user.email),
-                _buildDetailRow(context, Icons.phone_outlined, 'Phone Number',
-                    user.phoneNumber.isNotEmpty ? user.phoneNumber : 'N/A'),
-                _buildDetailRow(context, Icons.location_on_outlined, 'Address',
-                    user.address.isNotEmpty ? user.address : 'N/A'),
+                _buildDetailRow(
+                  context,
+                  Icons.badge_outlined,
+                  'Staff ID',
+                  user.staffId,
+                ),
+                _buildDetailRow(
+                  context,
+                  Icons.person,
+                  'First Name',
+                  user.firstName,
+                ),
+                _buildDetailRow(
+                  context,
+                  Icons.person_outline,
+                  'Last Name',
+                  user.lastName,
+                ),
+                _buildDetailRow(
+                  context,
+                  Icons.email_outlined,
+                  'Email',
+                  user.email,
+                ),
+                _buildDetailRow(
+                  context,
+                  Icons.phone_outlined,
+                  'Phone Number',
+                  user.phoneNumber.isNotEmpty ? user.phoneNumber : 'N/A',
+                ),
+                _buildDetailRow(
+                  context,
+                  Icons.location_on_outlined,
+                  'Address',
+                  user.address.isNotEmpty ? user.address : 'N/A',
+                ),
               ],
             ),
 
@@ -82,15 +110,36 @@ class EmployeeDetailsPage extends StatelessWidget {
               icon: Icons.work_outline,
               title: 'Work Information',
               details: [
-                _buildDetailRow(context, Icons.account_tree_outlined, 'Department',
-                    user.department ?? 'N/A'),
-                _buildDetailRow(context, Icons.supervisor_account_outlined, 'Supervisor',
-                    user.supervisor ?? 'N/A'),
                 _buildDetailRow(
-                    context, Icons.schedule_outlined, 'Shift', user.shift ?? 'N/A'),
+                  context,
+                  Icons.account_tree_outlined,
+                  'Department',
+                  user.department ?? 'N/A',
+                ),
                 _buildDetailRow(
-                    context, Icons.person_pin_outlined, 'Username', user.username),
-                _buildDetailRow(context, Icons.lock_outline, 'Password', '••••••••'),
+                  context,
+                  Icons.supervisor_account_outlined,
+                  'Supervisor',
+                  user.supervisor ?? 'N/A',
+                ),
+                _buildDetailRow(
+                  context,
+                  Icons.schedule_outlined,
+                  'Shift',
+                  user.shift ?? 'N/A',
+                ),
+                _buildDetailRow(
+                  context,
+                  Icons.person_pin_outlined,
+                  'Username',
+                  user.username,
+                ),
+                _buildDetailRow(
+                  context,
+                  Icons.lock_outline,
+                  'Password',
+                  '••••••••',
+                ),
               ],
             ),
 
@@ -99,18 +148,41 @@ class EmployeeDetailsPage extends StatelessWidget {
               icon: Icons.verified_user_outlined,
               title: 'Employment Status',
               details: [
-                _buildDetailRow(context, Icons.calendar_today_outlined,
-                    'Date of Joining', _formatDate(user.dateOfJoining)),
-                _buildDetailRow(context, Icons.event_busy_outlined,
-                    'Date of Resignation', _formatDate(user.dateOfResignation)),
-                _buildDetailRow(context, Icons.circle, 'Status', user.status,
-                    valueColor: user.status.toLowerCase() == 'active'
-                        ? Colors.green.shade700 // Semantic color
-                        : Colors.red.shade700), // Semantic color
-                _buildDetailRow(context, Icons.update_outlined, 'Last Update',
-                    _formatDate(user.updatedAt)),
-                _buildDetailRow(context, Icons.comment_outlined, 'Remarks',
-                    user.remarks.isNotEmpty ? user.remarks : 'No remarks.'),
+                _buildDetailRow(
+                  context,
+                  Icons.calendar_today_outlined,
+                  'Date of Joining',
+                  _formatDate(user.dateOfJoining),
+                ),
+                _buildDetailRow(
+                  context,
+                  Icons.event_busy_outlined,
+                  'Date of Resignation',
+                  _formatDate(user.dateOfResignation),
+                ),
+                _buildDetailRow(
+                  context,
+                  Icons.circle,
+                  'Status',
+                  user.status,
+                  valueColor: user.status.toLowerCase() == 'active'
+                      ? Colors
+                            .green
+                            .shade700 // Semantic color
+                      : Colors.red.shade700,
+                ), // Semantic color
+                _buildDetailRow(
+                  context,
+                  Icons.update_outlined,
+                  'Last Update',
+                  _formatDate(user.updatedAt),
+                ),
+                _buildDetailRow(
+                  context,
+                  Icons.comment_outlined,
+                  'Remarks',
+                  user.remarks.isNotEmpty ? user.remarks : 'No remarks.',
+                ),
               ],
             ),
           ],
@@ -136,7 +208,9 @@ class EmployeeDetailsPage extends StatelessWidget {
         color: theme.cardColor, // Theme-aware card color
         boxShadow: [
           BoxShadow(
-            color: theme.shadowColor.withValues(alpha: 0.1), // Theme-aware shadow
+            color: theme.shadowColor.withValues(
+              alpha: 0.1,
+            ), // Theme-aware shadow
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -147,20 +221,14 @@ class EmployeeDetailsPage extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 35,
-            backgroundColor: colorScheme.primaryContainer, // Theme-aware
-            backgroundImage: NetworkImage(profilePictureUrl),
-            onBackgroundImageError: (_, __) {},
-            child: profilePictureUrl.isEmpty
-                ? Text(
-                    name.isNotEmpty ? name[0] : 'U',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: colorScheme.onPrimaryContainer, // Theme-aware
-                    ),
-                  )
-                : null,
+            backgroundColor: colorScheme.primaryContainer,
+            child: Icon(
+              Icons.person,
+              size: 40,
+              color: colorScheme.onPrimaryContainer,
+            ),
           ),
+
           const SizedBox(width: 16),
           Expanded(
             child: Column(
@@ -177,14 +245,13 @@ class EmployeeDetailsPage extends StatelessWidget {
                 Text(
                   email,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+                    color: theme.textTheme.bodyMedium?.color?.withValues(
+                      alpha: 0.7,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  'Staff ID: $staffId',
-                  style: theme.textTheme.bodySmall,
-                ),
+                Text('Staff ID: $staffId', style: theme.textTheme.bodySmall),
               ],
             ),
           ),
@@ -209,7 +276,9 @@ class EmployeeDetailsPage extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: theme.shadowColor.withValues(alpha : 0.1), // Theme-aware shadow
+            color: theme.shadowColor.withValues(
+              alpha: 0.1,
+            ), // Theme-aware shadow
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -220,7 +289,10 @@ class EmployeeDetailsPage extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, color: theme.colorScheme.primary), // Theme-aware icon color
+              Icon(
+                icon,
+                color: theme.colorScheme.primary,
+              ), // Theme-aware icon color
               const SizedBox(width: 8),
               Text(
                 title,
@@ -259,7 +331,9 @@ class EmployeeDetailsPage extends StatelessWidget {
             child: Text(
               label,
               style: TextStyle(
-                color: theme.textTheme.bodyMedium?.color?.withValues(alpha:0.8),
+                color: theme.textTheme.bodyMedium?.color?.withValues(
+                  alpha: 0.8,
+                ),
                 fontWeight: FontWeight.w600,
               ),
             ),

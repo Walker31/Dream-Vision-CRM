@@ -81,7 +81,7 @@ class _SettingsState extends State<Settings> {
                   _buildSettingsCard(
                     children: [
                       _buildListTile(
-                        icon: CupertinoIcons.person,
+                        icon: CupertinoIcons.person_fill,
                         title: 'User Information',
                         onTap: () {
                           context.push('/profile-details');

@@ -1,13 +1,16 @@
+// ignore_for_file: unused_element
+
 import 'dart:async';
 import 'package:dreamvision/charts/enquiry_status_data.dart';
 import 'package:dreamvision/services/enquiry_service.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'package:go_router/go_router.dart';
 import 'package:logger/logger.dart';
 
 import '../../charts/telecaller_call_chart.dart';
-import 'paginated_enquiry_list.dart'; // Import the new file
+import 'paginated_enquiry_list.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -18,7 +21,7 @@ class AdminDashboard extends StatefulWidget {
 
 class _AdminDashboardState extends State<AdminDashboard>
     with TickerProviderStateMixin {
-  final EnquiryService _enquiryService = EnquiryService();
+  late final EnquiryService _enquiryService;
   final Logger logger = Logger();
   late TabController _tabController;
 
@@ -36,6 +39,9 @@ class _AdminDashboardState extends State<AdminDashboard>
   @override
   void initState() {
     super.initState();
+
+    _enquiryService = EnquiryService(); // FIXED: Created only here
+
     _tabController = TabController(length: 2, vsync: this);
     _summaryDataFuture = _fetchSummaryData();
   }
@@ -83,8 +89,10 @@ class _AdminDashboardState extends State<AdminDashboard>
 
   List<ChartData> _buildChartDataFromSummary(List<dynamic> summaryData) {
     if (summaryData.isEmpty) return [];
-    final total =
-        summaryData.fold<int>(0, (sum, item) => sum + (item['count'] as int));
+    final total = summaryData.fold<int>(
+      0,
+      (sum, item) => sum + (item['count'] as int),
+    );
     return summaryData.map((item) {
       final status = item['status'] as String;
       final count = item['count'] as int;
@@ -111,27 +119,35 @@ class _AdminDashboardState extends State<AdminDashboard>
 
   Future<void> _pickAndUploadFile() async {
     if (_isUploading) return;
-    FilePickerResult? result = await FilePicker.platform
-        .pickFiles(type: FileType.custom, allowedExtensions: ['xlsx', 'csv']);
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['xlsx', 'csv'],
+    );
     if (result != null && result.files.single.path != null) {
       String filePath = result.files.single.path!;
       setState(() => _isUploading = true);
       try {
         final response = await _enquiryService.bulkUploadEnquiries(filePath);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
               content: Text(response['message'] ?? 'Upload successful!'),
-              backgroundColor: Colors.green));
+              backgroundColor: Colors.green,
+            ),
+          );
 
           _refreshAllData();
         }
       } catch (e) {
         logger.e(e);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
               content: Text('Upload failed: $e', maxLines: 5),
               backgroundColor: Colors.red,
-              duration: const Duration(seconds: 7)));
+              duration: const Duration(seconds: 7),
+            ),
+          );
         }
       } finally {
         if (mounted) setState(() => _isUploading = false);
@@ -147,20 +163,75 @@ class _AdminDashboardState extends State<AdminDashboard>
         leading: Builder(
           builder: (context) => IconButton(
             icon: Padding(
-                padding: const EdgeInsets.only(left: 8.0),
-                child: Image.asset('assets/logo.jpg',
-                    errorBuilder: (c, e, s) => const Icon(Icons.menu))),
+              padding: const EdgeInsets.only(left: 8.0),
+              child: Image.asset(
+                'assets/logo.jpg',
+                errorBuilder: (c, e, s) => const Icon(Icons.menu),
+              ),
+            ),
             onPressed: () => Scaffold.of(context).openDrawer(),
             tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
           ),
         ),
         actions: [
+          FilledButton.tonalIcon(
+            onPressed: _isUploading ? null : _pickAndUploadFile,
+            icon: _isUploading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.upload_file),
+            label: Text(_isUploading ? 'Uploading...' : 'Bulk Add'),
+          ),
+          const SizedBox(width: 12),
           IconButton(
-              icon: const Icon(Icons.settings),
-              onPressed: () => context.push('/settings'))
+            icon: const Icon(Icons.settings),
+            onPressed: () => context.push('/settings'),
+          ),
         ],
       ),
       drawer: _buildDrawer(),
+      floatingActionButton: SpeedDial(
+        icon: Icons.add,
+        activeIcon: Icons.close,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Colors.white,
+        elevation: 8,
+        spaceBetweenChildren: 10,
+        animationCurve: Curves.easeInOutBack,
+        overlayOpacity: 0.3,
+
+        children: [
+          SpeedDialChild(
+            child: const Icon(Icons.upload_file_rounded, color: Colors.white),
+            label: "Bulk Upload",
+            labelStyle: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+            backgroundColor: Colors.teal.shade600,
+            foregroundColor: Colors.white,
+            elevation: 5,
+          ),
+          SpeedDialChild(
+            child: const Icon(
+              Icons.person_add_alt_1_rounded,
+              color: Colors.white,
+            ),
+            label: "Add Enquiry",
+            labelStyle: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+            backgroundColor: Colors.indigo.shade600,
+            foregroundColor: Colors.white,
+            elevation: 5,
+          ),
+        ],
+      ),
+
       body: FutureBuilder<Map<String, dynamic>>(
         future: _summaryDataFuture,
         builder: (context, snapshot) {
@@ -169,15 +240,19 @@ class _AdminDashboardState extends State<AdminDashboard>
           }
           if (snapshot.hasError) {
             return Center(
-              child:
-                  Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Text('Error: ${snapshot.error}', textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                    onPressed: () =>
-                        setState(() { _summaryDataFuture = _fetchSummaryData(); }),
-                    child: const Text('Retry')),
-              ]),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('Error: ${snapshot.error}', textAlign: TextAlign.center),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => setState(() {
+                      _summaryDataFuture = _fetchSummaryData();
+                    }),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
             );
           }
           return _buildDashboardContent();
@@ -192,12 +267,13 @@ class _AdminDashboardState extends State<AdminDashboard>
         children: [
           const SizedBox(height: 72),
           ListTile(
-              title: const Text('Manage Users'),
-              leading: const Icon(Icons.group_outlined),
-              onTap: () {
-                Navigator.pop(context);
-                context.push('/users');
-              }),
+            title: const Text('Manage Users'),
+            leading: const Icon(Icons.group_outlined),
+            onTap: () {
+              Navigator.pop(context);
+              context.push('/users');
+            },
+          ),
           const Spacer(),
         ],
       ),
@@ -220,19 +296,22 @@ class _AdminDashboardState extends State<AdminDashboard>
                     const SizedBox(height: 16),
                     EnquiryStatusChartCard(chartDataSource: _chartDataSource),
                     const SizedBox(height: 16),
-                    _buildActionButtons(),
                   ],
                 ),
               ),
             ),
             SliverPersistentHeader(
-                delegate: _SliverAppBarDelegate(TabBar(
-                    controller: _tabController,
-                    tabs: [
-                      Tab(text: 'Unassigned ($_unassignedCount)'),
-                      Tab(text: 'Assigned ($_assignedCount)')
-                    ])),
-                pinned: true),
+              delegate: _SliverAppBarDelegate(
+                TabBar(
+                  controller: _tabController,
+                  tabs: [
+                    Tab(text: 'Unassigned ($_unassignedCount)'),
+                    Tab(text: 'Assigned ($_assignedCount)'),
+                  ],
+                ),
+              ),
+              pinned: true,
+            ),
           ],
           body: TabBarView(
             controller: _tabController,
@@ -264,7 +343,8 @@ class _AdminDashboardState extends State<AdminDashboard>
                 ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2))
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Icon(Icons.upload_file_outlined),
             label: Text(_isUploading ? 'Uploading...' : 'Bulk Add'),
           ),
@@ -274,8 +354,10 @@ class _AdminDashboardState extends State<AdminDashboard>
             icon: const Icon(Icons.add),
             label: const Text('Add Enquiry'),
             style: ElevatedButton.styleFrom(
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8))),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
           ),
         ],
       ),
@@ -285,16 +367,25 @@ class _AdminDashboardState extends State<AdminDashboard>
 
 class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   _SliverAppBarDelegate(this._tabBar);
+
   final TabBar _tabBar;
+
   @override
   double get minExtent => _tabBar.preferredSize.height;
+
   @override
   double get maxExtent => _tabBar.preferredSize.height;
+
   @override
   Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     return Container(
-        color: Theme.of(context).scaffoldBackgroundColor, child: _tabBar);
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: _tabBar,
+    );
   }
 
   @override
