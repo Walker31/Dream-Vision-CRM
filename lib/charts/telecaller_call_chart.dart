@@ -4,17 +4,17 @@ import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:dreamvision/services/telecaller_service.dart';
 
 class _StackedCallData {
-  _StackedCallData(this.date, this.followUpsToday, this.cnrAndDone);
-
   final DateTime date;
   final int followUpsToday;
   final int cnrAndDone;
 
+  _StackedCallData(this.date, this.followUpsToday, this.cnrAndDone);
+
   factory _StackedCallData.fromJson(Map<String, dynamic> json) {
     return _StackedCallData(
       DateTime.parse(json['date']),
-      json['followups_today'] as int,
-      json['cnr_and_done'] as int,
+      (json['followups_today'] ?? 0) as int,
+      (json['cnr_and_done'] ?? 0) as int,
     );
   }
 }
@@ -57,16 +57,9 @@ class _TelecallerCallChartState extends State<TelecallerCallChart> {
     });
 
     try {
-      final responseData = await _service.getCallActivityData(
-        _selectedDateRange,
-      );
-
-      if (!mounted) return;
-
-      final data = responseData
-          .map(
-            (json) => _StackedCallData.fromJson(json as Map<String, dynamic>),
-          )
+      final response = await _service.getCallActivityData(_selectedDateRange);
+      final data = response
+          .map((json) => _StackedCallData.fromJson(json))
           .toList();
 
       if (!mounted) return;
@@ -93,13 +86,8 @@ class _TelecallerCallChartState extends State<TelecallerCallChart> {
       lastDate: DateTime.now(),
     );
 
-    if (!mounted) return;
-
     if (picked != null && picked != _selectedDateRange) {
-      setState(() {
-        _selectedDateRange = picked;
-      });
-
+      setState(() => _selectedDateRange = picked);
       _fetchChartData();
     }
   }
@@ -110,38 +98,39 @@ class _TelecallerCallChartState extends State<TelecallerCallChart> {
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Call Activity',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                Flexible(
-                  child: TextButton.icon(
-                    icon: const Icon(Icons.calendar_today_outlined, size: 16),
-                    label: Text(
-                      '${DateFormat.yMMMd().format(_selectedDateRange.start)} - ${DateFormat.yMMMd().format(_selectedDateRange.end)}',
-                      overflow: TextOverflow.ellipsis,
-                      softWrap: false,
-                    ),
-                    onPressed: () => _selectDateRange(context),
-                  ),
-                ),
-              ],
-            ),
+            _buildHeader(),
             const SizedBox(height: 16),
-            _buildChartContent(),
+            _buildContent(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildChartContent() {
+  Widget _buildHeader() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text(
+          'Call Activity',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        TextButton.icon(
+          icon: const Icon(Icons.calendar_today_outlined, size: 16),
+          label: Text(
+            '${DateFormat.yMMMd().format(_selectedDateRange.start)} - ${DateFormat.yMMMd().format(_selectedDateRange.end)}',
+            overflow: TextOverflow.ellipsis,
+          ),
+          onPressed: () => _selectDateRange(context),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildContent() {
     if (_isLoading) {
       return const SizedBox(
         height: 220,
@@ -153,13 +142,9 @@ class _TelecallerCallChartState extends State<TelecallerCallChart> {
       return SizedBox(
         height: 220,
         child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Text(
-              'Failed to load chart data:\n$_errorMessage',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
+          child: Text(
+            'Failed to load chart data:\n$_errorMessage',
+            textAlign: TextAlign.center,
           ),
         ),
       );
@@ -168,74 +153,50 @@ class _TelecallerCallChartState extends State<TelecallerCallChart> {
     if (_chartData.isEmpty) {
       return const SizedBox(
         height: 220,
-        child: Center(child: Text('No data for the selected range.')),
+        child: Center(child: Text('No data for selected range')),
       );
     }
 
-    return _buildAnalyticsChart();
+    return _buildChart();
   }
 
-  Widget _buildAnalyticsChart() {
+  Widget _buildChart() {
     final theme = Theme.of(context);
-    final isDarkMode = theme.brightness == Brightness.dark;
-    final gridLineColor = isDarkMode ? Colors.white24 : Colors.black12;
+    final isDark = theme.brightness == Brightness.dark;
 
-    final followUpsColor = theme.primaryColor.withValues(alpha: 0.8);
-    final cnrDoneColor = Colors.orange.shade400;
+    final gridColor = isDark ? Colors.white24 : Colors.black12;
+    final followColor = isDark ? Colors.blue.shade300 : theme.primaryColor;
+    final cnrDoneColor = isDark ? Colors.orange.shade300 : Colors.orange;
 
     return SizedBox(
       height: 220,
       child: SfCartesianChart(
         plotAreaBorderWidth: 0,
-        legend: const Legend(
-          isVisible: true,
-          position: LegendPosition.bottom,
-          overflowMode: LegendItemOverflowMode.wrap,
-          textStyle: TextStyle(fontSize: 12),
-        ),
-        trackballBehavior: TrackballBehavior(
-          enable: true,
-          activationMode: ActivationMode.singleTap,
-          tooltipSettings: InteractiveTooltip(
-            enable: true,
-            format: 'series.name: point.y',
-            color: isDarkMode ? Colors.grey[800] : Colors.grey[100],
-            textStyle: TextStyle(
-              color: isDarkMode ? Colors.white : Colors.black,
-            ),
-          ),
-        ),
+        legend: const Legend(isVisible: true, position: LegendPosition.bottom),
         primaryXAxis: DateTimeAxis(
-          majorGridLines: const MajorGridLines(width: 0),
           axisLine: const AxisLine(width: 0),
-          edgeLabelPlacement: EdgeLabelPlacement.shift,
+          majorGridLines: const MajorGridLines(width: 0),
           dateFormat: DateFormat.MMMd(),
-          labelStyle: const TextStyle(fontSize: 10),
         ),
         primaryYAxis: NumericAxis(
-          isVisible: true,
-          majorGridLines: MajorGridLines(width: 1, color: gridLineColor),
           axisLine: const AxisLine(width: 0),
-          numberFormat: NumberFormat.decimalPattern(),
+          majorGridLines: MajorGridLines(color: gridColor),
           minimum: 0,
-          labelStyle: const TextStyle(fontSize: 10),
         ),
-        series: <CartesianSeries>[
+        series: [
           StackedColumnSeries<_StackedCallData, DateTime>(
-            dataSource: _chartData,
-            xValueMapper: (data, _) => data.date,
-            yValueMapper: (data, _) => data.followUpsToday,
             name: 'Follow-ups',
-            color: followUpsColor,
-            borderRadius: const BorderRadius.all(Radius.circular(4)),
+            dataSource: _chartData,
+            xValueMapper: (d, _) => d.date,
+            yValueMapper: (d, _) => d.followUpsToday,
+            color: followColor,
           ),
           StackedColumnSeries<_StackedCallData, DateTime>(
+            name: 'CNR + Done',
             dataSource: _chartData,
-            xValueMapper: (data, _) => data.date,
-            yValueMapper: (data, _) => data.cnrAndDone,
-            name: 'CNR / Done',
+            xValueMapper: (d, _) => d.date,
+            yValueMapper: (d, _) => d.cnrAndDone,
             color: cnrDoneColor,
-            borderRadius: const BorderRadius.all(Radius.circular(4)),
           ),
         ],
       ),

@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'package:dreamvision/models/enquiry_model.dart';
 import 'package:dreamvision/services/enquiry_service.dart';
 import 'package:dreamvision/widgets/back_button.dart';
@@ -7,8 +9,8 @@ import 'package:logger/logger.dart';
 import 'dart:async';
 import 'package:go_router/go_router.dart';
 import '../../dialogs/user_selection_dialog.dart';
+import '../../widgets/delete_confirmation_dialog.dart';
 import '../Telecaller/follow_up_sheet.dart';
-// Correct import based on the documentation
 import 'package:flutter_expandable_fab/flutter_expandable_fab.dart';
 
 class EnquiryDetailPage extends StatefulWidget {
@@ -24,7 +26,6 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
   final EnquiryService _enquiryService = EnquiryService();
   late Future<Enquiry> _enquiryFuture;
   final Logger _logger = Logger();
-  // Add a key to control the FAB programmatically (optional, but good practice)
   final _fabKey = GlobalKey<ExpandableFabState>();
 
   @override
@@ -161,6 +162,53 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
       }
     }
   }
+  Future<void> _deleteEnquiry(int id) async {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => const Center(child: CircularProgressIndicator()),
+  );
+
+  try {
+    await _enquiryService.deleteEnquiry(id);
+
+    if (mounted) Navigator.pop(context); // close loader
+    if (mounted) Navigator.pop(context, true); // go back
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Enquiry deleted successfully."),
+        backgroundColor: Colors.green,
+      ),
+    );
+  } catch (e) {
+    if (mounted) Navigator.pop(context);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("Failed to delete enquiry: $e"),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+}
+
+
+  void _showDeleteEnquiryDialog(Enquiry enquiry) {
+  showDialog(
+    context: context,
+    builder: (context) {
+      return DeleteConfirmationDialog(
+        title: "Confirm Deletion",
+        message:
+            "Are you sure you want to delete the enquiry for ${enquiry.firstName} ${enquiry.lastName ?? ''}? This cannot be undone.",
+        onConfirm: () async {
+          await _deleteEnquiry(enquiry.id);
+        },
+      );
+    },
+  );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -231,7 +279,7 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
               : const Center(child: Text('No enquiry data found.')),
           floatingActionButton: enquiry != null
               ? SpeedDial(
-                  icon: Icons.add,
+                  icon: Icons.menu,
                   activeIcon: Icons.close,
                   backgroundColor: Theme.of(context).colorScheme.primary,
                   foregroundColor: Colors.white,
@@ -250,6 +298,16 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
                       label: 'Edit Enquiry',
                       labelStyle: const TextStyle(fontSize: 14),
                       onTap: () => _goToEditPage(context, enquiry),
+                    ),
+                    SpeedDialChild(
+                      child: const Icon(Icons.delete),
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                      label: 'Delete Enquiry',
+                      labelStyle: const TextStyle(fontSize: 14),
+                      onTap: () {
+                        _showDeleteEnquiryDialog(enquiry);
+                      }
                     ),
                     SpeedDialChild(
                       child: const Icon(Icons.history_outlined),

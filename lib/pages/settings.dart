@@ -108,29 +108,6 @@ class _SettingsState extends State<Settings> {
                   ),
                   const SizedBox(height: 24),
                   _buildSectionHeader('More'),
-                  _buildSettingsCard(
-                    children: [
-                      _buildListTile(
-                        icon: CupertinoIcons.question_circle,
-                        title: 'Help & Support',
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Navigate to Help & Support')),
-                          );
-                        },
-                      ),
-                      const Divider(height: 1),
-                      _buildListTile(
-                        icon: CupertinoIcons.info_circle,
-                        title: 'About',
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Navigate to About page')),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
                 ],
               ),
             ),

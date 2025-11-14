@@ -69,8 +69,9 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
       );
 
       final List<dynamic> results = response['results'];
-      final newEnquiries =
-          results.map((data) => Enquiry.fromJson(data)).toList();
+      final newEnquiries = results
+          .map((data) => Enquiry.fromJson(data))
+          .toList();
 
       if (mounted) {
         setState(() {
@@ -178,16 +179,13 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _refresh,
-        child: _buildBody(),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          context.push('/add-enquiry');
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Add Enquiry'),
+      body: RefreshIndicator(onRefresh: _refresh, child: _buildBody()),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: Theme.of(context).primaryColor,
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: const Icon(Icons.add),
+        onPressed: () => context.push('/add-enquiry'),
       ),
     );
   }
@@ -286,8 +284,8 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
         }
 
         final enquiry = _enquiries[index];
-        final fullName =
-            '${enquiry.firstName} ${enquiry.lastName ?? ''}'.trim();
+        final fullName = '${enquiry.firstName} ${enquiry.lastName ?? ''}'
+            .trim();
         final status = enquiry.currentStatusName ?? 'Unknown';
 
         return Card(
@@ -314,6 +312,13 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
                   onPressed: () => _makePhoneCall(enquiry.phoneNumber),
                   color: Colors.green,
                   tooltip: 'Call ${enquiry.phoneNumber}',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.history, color: Colors.blueGrey),
+                  tooltip: 'View Follow-ups',
+                  onPressed: () {
+                    context.push('/follow-ups/${enquiry.id}', extra: fullName);
+                  },
                 ),
                 TextButton(
                   onPressed: () => _showAddFollowUpForm(context, enquiry),

@@ -162,4 +162,19 @@ class AdminUserService {
       throw Exception(e is DioException ? _handleDioError(e) : e.toString());
     }
   }
+
+  Future<Map<String, dynamic>> resetPassword(int userId) async {
+    final url = '/users/admin/$userId/reset-password/';
+    logger.i('Attempting to reset password for user ID: $userId at URL: $url');
+
+    try {
+      final response = await _dio.post(url);
+
+      logger.d('API Response [${response.statusCode}]: ${response.data}');
+      return response.data ?? {};
+    } catch (e) {
+      logger.e('Error resetting password for user $userId', error: e);
+      throw Exception(e is DioException ? _handleDioError(e) : e.toString());
+    }
+  }
 }

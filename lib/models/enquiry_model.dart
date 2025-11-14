@@ -19,7 +19,7 @@ class Enquiry {
   final String phoneNumber;
   final String? email;
   final String? address;
-  final int? pincode; // 2. FIXED: Will be cast safely below
+  final int? pincode;
   final List<String> referredBy;
   final String? fatherPhoneNumber;
   final String? motherPhoneNumber;
@@ -28,8 +28,8 @@ class Enquiry {
   final String? enquiringForBoard;
   final String? enquiringForExam;
   final String? leadTemperature;
-  final String? totalFeesDecided; // 3. FIXED: Will be cast safely below
-  final int? installmentsAgreed; // 4. FIXED: Will be cast safely below
+  final String? totalFeesDecided;
+  final int? installmentsAgreed;
   final bool isAdmissionConfirmed;
   final String? referral;
   final String createdAt;

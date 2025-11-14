@@ -20,6 +20,9 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
   Logger logger = Logger();
   bool _isLoading = false;
 
+  // New state variable for CNR toggle
+  bool _isCnr = false;
+
   String? _standard;
   String? _board;
   final Set<String> _selectedExams = {};
@@ -58,7 +61,8 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
           _selectedStatusId = matchingStatus['id'] as int?;
         } else {
           logger.w(
-              "Current status name '$currentStatusName' not found in fetched statuses.");
+            "Current status name '$currentStatusName' not found in fetched statuses.",
+          );
         }
       }
     } catch (e) {
@@ -73,66 +77,115 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
   }
 
   Future<void> _submitForm() async {
-    if (_formKey.currentState!.validate() && !_isLoading) {
-      setState(() => _isLoading = true);
+    // Only validate the form if CNR is NOT toggled
+    if (!_isCnr && !_formKey.currentState!.validate()) {
+      return; // Validation failed, do nothing
+    }
 
-      final followUpPayload = {
+    if (_isLoading) return; // Already submitting
+    setState(() => _isLoading = true);
+
+    final Map<String, dynamic> followUpPayload;
+
+    if (_isCnr) {
+      final cnrStatus = _statuses.firstWhere(
+        (status) => (status['name'] as String).toLowerCase() == 'cnr',
+        orElse: () => null,
+      );
+
+      followUpPayload = {
+        'enquiry': widget.enquiry.id,
+        'remarks': 'CNR (Contact Not Received)',
+        'status_after_follow_up': cnrStatus?['id'],
+        'next_follow_up_date': null,
+        'academic_details_discussed': 'N/A - CNR',
+        'cnr': true,
+      };
+    } else {
+      followUpPayload = {
         'enquiry': widget.enquiry.id,
         'remarks': _feedbackController.text.trim(),
         'status_after_follow_up': _selectedStatusId,
-        'next_follow_up_date':
-            _nextFollowUpDate?.toIso8601String().split('T')[0],
+        'next_follow_up_date': _nextFollowUpDate?.toIso8601String(),
         'academic_details_discussed':
             "Standard: $_standard, Board: $_board, Exams: ${_selectedExams.join(', ')}, Admission: ${_admissionConfirmed == null ? 'N/A' : (_admissionConfirmed! ? 'Yes' : 'No')}",
+        'cnr': false,
       };
+    }
 
-      try {
-        await _enquiryService.addFollowUp(followUpPayload);
-        logger.d('Follow-up Submitted: $followUpPayload');
+    try {
+      await _enquiryService.addFollowUp(followUpPayload);
+      logger.d('Follow-up Submitted: $followUpPayload');
 
-        if (mounted) {
-          Navigator.of(context).pop(true);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Follow-up saved successfully!'),
-              backgroundColor: Colors.green,
+      if (mounted) {
+        Navigator.of(context).pop(true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Follow-up saved successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      logger.e("Failed to save follow-up: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Failed to save follow-up: ${e.toString().replaceFirst("Exception: ", "")}',
             ),
-          );
-        }
-      } catch (e) {
-        logger.e("Failed to save follow-up: $e");
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                  'Failed to save follow-up: ${e.toString().replaceFirst("Exception: ", "")}'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      } finally {
-        if (mounted) {
-          setState(() => _isLoading = false);
-        }
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
       }
     }
   }
 
   DateTime? _nextFollowUpDate;
 
-  Future<void> _pickNextFollowUpDate() async {
+  // --- MODIFICATION: Updated to pick Date and Time ---
+  Future<void> _pickNextFollowUpDateTime() async {
+    // 1. Pick Date
     final pickedDate = await showDatePicker(
       context: context,
-      initialDate: _nextFollowUpDate ?? DateTime.now().add(const Duration(days: 7)),
+      initialDate:
+          _nextFollowUpDate ?? DateTime.now().add(const Duration(days: 7)),
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
 
-    if (pickedDate != null && pickedDate != _nextFollowUpDate) {
-      setState(() {
-        _nextFollowUpDate = pickedDate;
-      });
-    }
+    if (pickedDate == null) return; // User cancelled date picker
+
+    if (!mounted) return; // Check context validity
+
+    // 2. Pick Time
+    final initialTime = _nextFollowUpDate != null
+        ? TimeOfDay.fromDateTime(_nextFollowUpDate!)
+        : const TimeOfDay(hour: 10, minute: 0); // Default to 10:00 AM
+
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: initialTime,
+    );
+
+    if (pickedTime == null) return; // User cancelled time picker
+
+    // 3. Combine and set state
+    final combinedDateTime = DateTime(
+      pickedDate.year,
+      pickedDate.month,
+      pickedDate.day,
+      pickedTime.hour,
+      pickedTime.minute,
+    );
+
+    setState(() {
+      _nextFollowUpDate = combinedDateTime;
+    });
   }
 
   @override
@@ -149,7 +202,11 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
         heightFactor: 0.9,
         child: Padding(
           padding: EdgeInsets.fromLTRB(
-              16.0, 16.0, 16.0, MediaQuery.of(context).viewInsets.bottom + 16.0),
+            16.0,
+            16.0,
+            16.0,
+            MediaQuery.of(context).viewInsets.bottom + 16.0,
+          ),
           child: Form(
             key: _formKey,
             child: Column(
@@ -185,48 +242,58 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
                           widget.enquiry.phoneNumber,
                         ),
                         _buildSectionTitle('Follow-up Details'),
-                        _buildStatusDropdown(),
-                        const SizedBox(height: 16),
-                        _buildDatePicker(),
-                        _buildTextField(
-                          _feedbackController,
-                          'Feedback / Remarks',
-                        ),
-                        _buildSectionTitle(
-                            'Academic & Admission Details (Enquiry)'),
-                        _buildChoiceChipGroup(
-                          'Standard',
-                          ['12th', '11th', '10th', '9th', '8th'],
-                          _standard,
-                          (val) => setState(() => _standard = val),
-                        ),
-                        const SizedBox(height: 8),
-                        _buildChoiceChipGroup(
-                          'Board',
-                          ['SSC', 'ICSE', 'CBSE'],
-                          _board,
-                          (val) => setState(() => _board = val),
-                        ),
-                        _buildCheckboxGroup('Exam', [
-                          'JEE (M+A)',
-                          'NEET (UG)',
-                          'MHT-CET + JEE (M)',
-                          'MHT-CET + NEET (UG)',
-                          'MHT-CET',
-                          'Regular',
-                          'Foundation',
-                          'Regular + Foundation',
-                        ], _selectedExams),
-                        _buildChoiceChipGroup(
-                          'Admission Confirmed',
-                          ['Yes', 'No'],
-                          _admissionConfirmed == null
-                              ? null
-                              : (_admissionConfirmed! ? 'Yes' : 'No'),
-                          (val) => setState(
-                            () => _admissionConfirmed = (val == 'Yes'),
+
+                        // --- NEW CNR TOGGLE ---
+                        _buildCnrToggle(),
+                        const SizedBox(height: 10),
+                        // --- CONDITIONALLY VISIBLE FIELDS ---
+                        if (!_isCnr) ...[
+                          _buildStatusDropdown(),
+                          const SizedBox(height: 16),
+                          // --- MODIFICATION: Using new DateTime picker widget ---
+                          _buildDateTimePicker(),
+                          _buildTextField(
+                            _feedbackController,
+                            'Feedback / Remarks',
                           ),
-                        ),
+                          _buildSectionTitle(
+                            'Academic & Admission Details (Enquiry)',
+                          ),
+                          _buildChoiceChipGroup(
+                            'Standard',
+                            ['12th', '11th', '10th', '9th', '8th'],
+                            _standard,
+                            (val) => setState(() => _standard = val),
+                          ),
+                          const SizedBox(height: 8),
+                          _buildChoiceChipGroup(
+                            'Board',
+                            ['SSC', 'ICSE', 'CBSE'],
+                            _board,
+                            (val) => setState(() => _board = val),
+                          ),
+                          _buildCheckboxGroup('Exam', [
+                            'JEE (M+A)',
+                            'NEET (UG)',
+                            'MHT-CET + JEE (M)',
+                            'MHT-CET + NEET (UG)',
+                            'MHT-CET',
+                            'Regular',
+                            'Foundation',
+                            'Regular + Foundation',
+                          ], _selectedExams),
+                          _buildChoiceChipGroup(
+                            'Admission Confirmed',
+                            ['Yes', 'No'],
+                            _admissionConfirmed == null
+                                ? null
+                                : (_admissionConfirmed! ? 'Yes' : 'No'),
+                            (val) => setState(
+                              () => _admissionConfirmed = (val == 'Yes'),
+                            ),
+                          ),
+                        ],
+
                         const SizedBox(height: 20),
                         ElevatedButton(
                           onPressed: _isLoading ? null : _submitForm,
@@ -252,6 +319,27 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
           ),
         ),
       ),
+    );
+  }
+
+  // --- NEW HELPER WIDGET FOR CNR TOGGLE ---
+  Widget _buildCnrToggle() {
+    return SwitchListTile(
+      title: const Text(
+        'CNR (Contact Not Received)', // Changed text back
+        style: TextStyle(fontWeight: FontWeight.w600),
+      ),
+      value: _isCnr,
+      onChanged: (bool value) {
+        setState(() {
+          _isCnr = value;
+        });
+      },
+      secondary: Icon(
+        Icons.phone_missed,
+        color: _isCnr ? Theme.of(context).primaryColor : Colors.grey,
+      ),
+      contentPadding: const EdgeInsets.symmetric(vertical: 4.0),
     );
   }
 
@@ -288,17 +376,18 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
     );
   }
 
-  Widget _buildDatePicker() {
+  // --- MODIFICATION: Renamed widget and updated text/format ---
+  Widget _buildDateTimePicker() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Next Follow-up Date',
+          'Next Follow-up Date & Time', // Changed label
           style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
         ),
         const SizedBox(height: 8),
         InkWell(
-          onTap: _pickNextFollowUpDate,
+          onTap: _pickNextFollowUpDateTime, // Changed function call
           child: Container(
             height: 55,
             decoration: BoxDecoration(
@@ -311,8 +400,9 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
               children: [
                 Text(
                   _nextFollowUpDate == null
-                      ? 'Select a date (Optional)'
-                      : DateFormat.yMMMd().format(_nextFollowUpDate!),
+                      ? 'Select date & time (Optional)' // Changed hint
+                      // Changed format to show date and time
+                      : DateFormat.yMMMd().add_jm().format(_nextFollowUpDate!),
                   style: TextStyle(
                     color: _nextFollowUpDate == null ? Colors.grey[600] : null,
                     fontSize: 16,

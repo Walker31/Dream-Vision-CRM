@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'dart:typed_data';
 import 'package:dreamvision/widgets/back_button.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +9,7 @@ import 'package:logger/logger.dart';
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
 import 'package:file_saver/file_saver.dart';
 import '../../services/admin_user.dart';
+import '../../widgets/password_display_dialog.dart';
 
 class User {
   final int id;
@@ -149,6 +152,59 @@ class _UserListPageState extends State<UserListPage> {
         );
       },
     );
+  }
+
+  void _showPasswordResetConfirmationDialog(User user) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Reset Password'),
+          content: Text(
+            'Are you sure you want to reset password for ${user.name}?',
+          ),
+          actions: [
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () => Navigator.pop(context),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+              ),
+              onPressed: () async {
+                Navigator.pop(context);
+                await _resetPassword(user);
+              },
+              child: const Text('Reset'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _resetPassword(User user) async {
+    try {
+      final response = await _adminUserService.resetPassword(user.id);
+      final newPassword = response['new_password'];
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) {
+          return PasswordDisplayDialog(
+            title: "Password Reset Successful",
+            username: user.username,
+            password: newPassword,
+          );
+        },
+      );
+
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   Future<void> _exportUsers() async {
@@ -330,10 +386,20 @@ class _UserListPageState extends State<UserListPage> {
                 ),
               ],
             ),
-            trailing: IconButton(
-              icon: const Icon(Icons.delete_outline),
-              color: Theme.of(context).colorScheme.error,
-              onPressed: () => _showDeleteConfirmationDialog(user),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  color: Theme.of(context).colorScheme.error,
+                  onPressed: () => _showDeleteConfirmationDialog(user),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  color: Theme.of(context).colorScheme.error,
+                  onPressed: () => _showPasswordResetConfirmationDialog(user),
+                ),
+              ],
             ),
           ),
         );

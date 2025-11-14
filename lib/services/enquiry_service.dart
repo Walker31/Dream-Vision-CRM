@@ -1,11 +1,17 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:dreamvision/config/constants.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:logger/logger.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class EnquiryService {
   static final EnquiryService _instance = EnquiryService._internal();
   factory EnquiryService() => _instance;
+  Logger logger = Logger();
 
   EnquiryService._internal() {
     _init();
@@ -108,6 +114,72 @@ class EnquiryService {
     }
   }
 
+  Future<void> _ensureStoragePermission() async {
+    if (Platform.isAndroid) {
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      final sdkInt = androidInfo.version.sdkInt;
+
+      if (sdkInt >= 30) {
+        // Android 11 (API 30) and above
+        if (!await Permission.manageExternalStorage.isGranted) {
+          final result = await Permission.manageExternalStorage.request();
+          if (!result.isGranted) {
+            throw Exception('Storage permission denied');
+          }
+        }
+      } else {
+        // Android 10 and below
+        if (!await Permission.storage.isGranted) {
+          final result = await Permission.storage.request();
+          if (!result.isGranted) {
+            throw Exception('Storage permission denied');
+          }
+        }
+      }
+    }
+  }
+
+  Future<String> downloadEnquiryTemplate() async {
+    try {
+      await _ensureStoragePermission();
+
+      final response = await _dio.get(
+        '/enquiries/template/',
+        options: Options(responseType: ResponseType.bytes),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed: HTTP ${response.statusCode}');
+      }
+
+      final bytes = Uint8List.fromList(List<int>.from(response.data));
+
+      Directory directory;
+
+      if (Platform.isAndroid) {
+        final downloads = Directory('/storage/emulated/0/Download');
+        if (await downloads.exists()) {
+          directory = downloads;
+        } else {
+          directory = await getApplicationDocumentsDirectory();
+        }
+      } else if (Platform.isIOS) {
+        directory = await getApplicationDocumentsDirectory();
+      } else {
+        directory =
+            await getDownloadsDirectory() ?? await getTemporaryDirectory();
+      }
+
+      final filePath = '${directory.path}/Sample Template.xlsx';
+      final file = File(filePath);
+      await file.writeAsBytes(bytes, flush: true);
+
+      return filePath;
+    } catch (e) {
+      throw Exception('Failed to download template: $e');
+    }
+  }
+
   Future<Map<String, dynamic>> updateEnquiry(
     int enquiryId,
     Map<String, dynamic> data,
@@ -122,6 +194,19 @@ class EnquiryService {
 
   Future<Map<String, dynamic>> getEnquiries({int page = 1, String? query}) {
     return _getPaginatedList('/enquiries/', page: page, query: query);
+  }
+
+  Future<Map<String, dynamic>> deleteEnquiry(int enquiryId) async {
+    try {
+      final response = await _dio.patch(
+        '/enquiries/$enquiryId/',
+        data: {'is_deleted': true},
+      );
+
+      return response.data ?? {};
+    } catch (e) {
+      throw Exception(e is DioException ? _handleDioError(e) : e.toString());
+    }
   }
 
   Future<Map<String, dynamic>> createEnquiry(Map<String, dynamic> data) async {

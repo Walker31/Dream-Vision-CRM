@@ -33,6 +33,9 @@ dependencies:
   flutter_speed_dial: ^7.0.0
   syncfusion_flutter_xlsio: ^31.2.5
   file_saver: ^0.3.1
+  open_filex: ^4.7.0
+  permission_handler: ^12.0.1
+  device_info_plus: ^12.2.0
 
 dev_dependencies:
   flutter_test:

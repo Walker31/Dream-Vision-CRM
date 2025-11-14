@@ -304,6 +304,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
               _formModel.phoneController,
               'Student\'s Phone',
               keyboardType: TextInputType.phone,
+              isRequired: false
             ),
             CustomTextField(
               _formModel.emailController,
@@ -332,7 +333,6 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
               _formModel.fatherPhoneController,
               'Father\'s Phone',
               keyboardType: TextInputType.phone,
-              isRequired: false,
             ),
             CustomTextField(
               _formModel.motherPhoneController,
@@ -483,12 +483,6 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
         SectionCard(
           title: 'Office Use',
           children: [
-            CustomApiDropdownField(
-              label: 'Source',
-              items: _sources,
-              value: _formModel.sourceId,
-              onChanged: (val) => setState(() => _formModel.sourceId = val),
-            ),
             CustomApiDropdownField(
               label: 'Current Status',
               items: _statuses,

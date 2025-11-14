@@ -112,24 +112,6 @@ class EmployeeDetailsPage extends StatelessWidget {
               details: [
                 _buildDetailRow(
                   context,
-                  Icons.account_tree_outlined,
-                  'Department',
-                  user.department ?? 'N/A',
-                ),
-                _buildDetailRow(
-                  context,
-                  Icons.supervisor_account_outlined,
-                  'Supervisor',
-                  user.supervisor ?? 'N/A',
-                ),
-                _buildDetailRow(
-                  context,
-                  Icons.schedule_outlined,
-                  'Shift',
-                  user.shift ?? 'N/A',
-                ),
-                _buildDetailRow(
-                  context,
                   Icons.person_pin_outlined,
                   'Username',
                   user.username,
@@ -153,12 +135,6 @@ class EmployeeDetailsPage extends StatelessWidget {
                   Icons.calendar_today_outlined,
                   'Date of Joining',
                   _formatDate(user.dateOfJoining),
-                ),
-                _buildDetailRow(
-                  context,
-                  Icons.event_busy_outlined,
-                  'Date of Resignation',
-                  _formatDate(user.dateOfResignation),
                 ),
                 _buildDetailRow(
                   context,

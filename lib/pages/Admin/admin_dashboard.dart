@@ -1,4 +1,4 @@
-// ignore_for_file: unused_element
+// ignore_for_file: unused_element, use_build_context_synchronously
 
 import 'dart:async';
 import 'package:dreamvision/charts/enquiry_status_data.dart';
@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'package:go_router/go_router.dart';
 import 'package:logger/logger.dart';
+import 'package:open_filex/open_filex.dart';
 
 import '../../charts/telecaller_call_chart.dart';
 import 'paginated_enquiry_list.dart';
@@ -214,7 +215,45 @@ class _AdminDashboardState extends State<AdminDashboard>
             backgroundColor: Colors.teal.shade600,
             foregroundColor: Colors.white,
             elevation: 5,
+            onTap: _pickAndUploadFile,
           ),
+          SpeedDialChild(
+            child: const Icon(Icons.download_rounded, color: Colors.white),
+            label: "Download Required Sheet",
+            labelStyle: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+            backgroundColor: Colors.blueGrey.shade600,
+            foregroundColor: Colors.white,
+            elevation: 5,
+            onTap: () async {
+              try {
+                final filePath = await _enquiryService
+                    .downloadEnquiryTemplate();
+
+                // ✅ Show confirmation snackbar with "Open" action
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('Template saved in Downloads folder'),
+                    action: SnackBarAction(
+                      label: 'Open',
+                      onPressed: () async {
+                        await OpenFilex.open(filePath);
+                      },
+                    ),
+                    duration: const Duration(seconds: 8),
+                  ),
+                );
+              } catch (e) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('Download failed: $e')));
+                logger.e(e);
+              }
+            },
+          ),
+
           SpeedDialChild(
             child: const Icon(
               Icons.person_add_alt_1_rounded,
@@ -228,6 +267,7 @@ class _AdminDashboardState extends State<AdminDashboard>
             backgroundColor: Colors.indigo.shade600,
             foregroundColor: Colors.white,
             elevation: 5,
+            onTap: () => context.push('/add-enquiry'),
           ),
         ],
       ),
@@ -382,12 +422,16 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) {
-    return Container(
-      color: Theme.of(context).scaffoldBackgroundColor,
-      child: _tabBar,
-    );
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
+    final containerColor = isDarkMode
+        ? theme.colorScheme.surface
+        : theme.scaffoldBackgroundColor;
+
+    return Container(color: containerColor, child: _tabBar);
   }
 
   @override
-  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) => false;
+  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) => true;
 }

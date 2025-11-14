@@ -2,6 +2,7 @@ import 'package:dreamvision/services/admin_user.dart';
 import 'package:dreamvision/widgets/back_button.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../widgets/password_display_dialog.dart';
 
 class AddUserPage extends StatefulWidget {
   const AddUserPage({super.key});
@@ -21,8 +22,9 @@ class _AddUserPageState extends State<AddUserPage> {
   final _emailController = TextEditingController();
   final _staffIdController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _addressController = TextEditingController();
+
   String? _selectedRole;
-  String? _selectedShift;
 
   @override
   void dispose() {
@@ -32,6 +34,7 @@ class _AddUserPageState extends State<AddUserPage> {
     _emailController.dispose();
     _staffIdController.dispose();
     _phoneController.dispose();
+    _addressController.dispose();
     super.dispose();
   }
 
@@ -47,10 +50,8 @@ class _AddUserPageState extends State<AddUserPage> {
       'email': _emailController.text,
       'staff_id': _staffIdController.text,
       'phone_number': _phoneController.text,
+      'address': _addressController.text,
       'role': _selectedRole!,
-      'shift': _selectedShift,
-      'department': null,
-      'supervisor': null,
     };
 
     try {
@@ -61,47 +62,13 @@ class _AddUserPageState extends State<AddUserPage> {
         await showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (BuildContext dialogContext) {
-            return AlertDialog(
-              title: const Text('User Created Successfully!'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('User "${_usernameController.text}" has been created.'),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Initial Password:',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    initialPassword,
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Please copy this password and provide it to the user. This will not be shown again.',
-                    style: TextStyle(fontStyle: FontStyle.italic),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  child: const Text('Done'),
-                  onPressed: () {
-                    Navigator.of(dialogContext).pop();
-                  },
-                ),
-              ],
-            );
-          },
+          builder: (_) => PasswordDisplayDialog(
+            title: "User Created Successfully",
+            username: _usernameController.text,
+            password: initialPassword,
+          ),
         );
-        if(mounted){
-          context.pop(true);
-        }
-        
+        if (mounted) context.pop(true);
       }
     } catch (e) {
       if (mounted) {
@@ -113,25 +80,24 @@ class _AddUserPageState extends State<AddUserPage> {
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isSubmitting = false);
-      }
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(
-        
         leading: const BackButtonIos(),
         title: const Text(
-          'Create New User Profile',
+          'Create User Profile',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 8.0),
+            padding: const EdgeInsets.only(right: 10),
             child: TextButton(
               onPressed: _isSubmitting ? null : _submitForm,
               child: _isSubmitting
@@ -139,7 +105,9 @@ class _AddUserPageState extends State<AddUserPage> {
                       height: 18,
                       width: 18,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
                   : const Text('Save'),
             ),
@@ -147,120 +115,138 @@ class _AddUserPageState extends State<AddUserPage> {
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
           child: Card(
-            elevation: 1,
+            elevation: 2,
+            shadowColor: Colors.black12,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(14),
             ),
             child: Padding(
-              padding: const EdgeInsets.all(24.0),
+              padding: const EdgeInsets.all(20),
               child: Theme(
-                data: Theme.of(context).copyWith(
+                data: theme.copyWith(
                   inputDecorationTheme: InputDecorationTheme(
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide.none,
                     ),
                     filled: true,
-                    fillColor: Colors.grey.withAlpha(25),
+                    fillColor: Colors.grey.withValues(alpha: 0.1),
+                    labelStyle: TextStyle(fontSize: 14),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
                   ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const _SectionHeader(title: 'User Identity'),
+                    const _SectionHeader(title: 'User Details'),
                     TextFormField(
                       controller: _firstNameController,
-                      decoration: const InputDecoration(labelText: 'First Name'),
-                      validator: (value) =>
-                          value == null || value.isEmpty ? 'Enter first name' : null,
+                      decoration: const InputDecoration(
+                        labelText: 'First Name',
+                      ),
+                      validator: (v) => v!.isEmpty ? 'Enter first name' : null,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 14),
                     TextFormField(
                       controller: _lastNameController,
                       decoration: const InputDecoration(labelText: 'Last Name'),
-                      validator: (value) =>
-                          value == null || value.isEmpty ? 'Enter last name' : null,
+                      validator: (v) => v!.isEmpty ? 'Enter last name' : null,
                     ),
-                    const SizedBox(height: 24),
-                    const _SectionHeader(title: 'Account Credentials'),
+
+                    const SizedBox(height: 26),
+                    const _SectionHeader(title: 'Account Information'),
                     TextFormField(
                       controller: _usernameController,
                       decoration: const InputDecoration(labelText: 'Username'),
-                      validator: (value) =>
-                          value == null || value.isEmpty ? 'Enter username' : null,
+                      validator: (v) => v!.isEmpty ? 'Enter username' : null,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 14),
                     TextFormField(
                       controller: _emailController,
                       decoration: const InputDecoration(labelText: 'Email'),
                       keyboardType: TextInputType.emailAddress,
                       validator: (value) {
-                        if (value == null || value.isEmpty) return 'Enter email';
-                        final emailRegex =
-                            RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
-                        if (!emailRegex.hasMatch(value)) {
-                          return 'Enter a valid email address';
+                        if (value == null || value.isEmpty) {
+                          return 'Enter email';
                         }
-                        return null;
+                        final emailRegex = RegExp(
+                          r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+                        );
+                        return emailRegex.hasMatch(value)
+                            ? null
+                            : 'Enter a valid email';
                       },
                     ),
-                    const SizedBox(height: 24),
-                    const _SectionHeader(title: 'Organizational Details'),
+
+                    const SizedBox(height: 26),
+                    const _SectionHeader(title: 'Organizational Info'),
                     TextFormField(
                       controller: _staffIdController,
                       decoration: const InputDecoration(labelText: 'Staff ID'),
-                      validator: (value) =>
-                          value == null || value.isEmpty ? 'Enter a Staff ID' : null,
+                      validator: (v) => v!.isEmpty ? 'Enter Staff ID' : null,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 14),
                     TextFormField(
                       controller: _phoneController,
-                      decoration: const InputDecoration(labelText: 'Phone Number'),
+                      decoration: const InputDecoration(
+                        labelText: 'Phone Number',
+                      ),
                       keyboardType: TextInputType.phone,
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return 'Enter a phone number';
+                          return 'Enter phone number';
                         }
-                        final phoneRegex = RegExp(r'^[0-9]{10}$');
-                        if (!phoneRegex.hasMatch(value)) {
-                          return 'Phone number must be 10 digits';
-                        }
-                        return null;
+                        return RegExp(r'^[0-9]{10}$').hasMatch(value)
+                            ? null
+                            : 'Phone must be 10 digits';
                       },
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 14),
                     DropdownButtonFormField<String>(
-                      initialValue: _selectedRole,
                       decoration: const InputDecoration(labelText: 'Role'),
                       items: ['Admin', 'Counsellor', 'Telecaller']
-                          .map((role) =>
-                              DropdownMenuItem(value: role, child: Text(role)))
+                          .map(
+                            (role) => DropdownMenuItem(
+                              value: role,
+                              child: Text(role),
+                            ),
+                          )
                           .toList(),
-                      onChanged: (value) => setState(() => _selectedRole = value),
+                      onChanged: (value) =>
+                          setState(() => _selectedRole = value),
                       validator: (value) =>
                           value == null ? 'Select a role' : null,
                     ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      initialValue: _selectedShift,
-                      decoration:
-                          const InputDecoration(labelText: 'Shift (Optional)'),
-                      items: ['Day', 'Night', 'Custom']
-                          .map((shift) => DropdownMenuItem(
-                              value: shift, child: Text(shift)))
-                          .toList(),
-                      onChanged: (value) => setState(() => _selectedShift = value),
+
+                    const SizedBox(height: 26),
+                    const _SectionHeader(title: 'Contact Details'),
+                    TextFormField(
+                      controller: _addressController,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Address',
+                        alignLabelWithHint: true,
+                      ),
+                      validator: (v) =>
+                          v!.isEmpty ? 'Enter full address' : null,
                     ),
+
                     const SizedBox(height: 32),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         minimumSize: const Size(double.infinity, 50),
-                        backgroundColor: Theme.of(context).primaryColor,
-                        foregroundColor: Colors.white,
+                        backgroundColor: theme.colorScheme.primary,
+                        foregroundColor: theme.colorScheme.onPrimary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                       onPressed: _isSubmitting ? null : _submitForm,
                       child: _isSubmitting
@@ -268,9 +254,14 @@ class _AddUserPageState extends State<AddUserPage> {
                               height: 24,
                               width: 24,
                               child: CircularProgressIndicator(
-                                  color: Colors.white, strokeWidth: 3),
+                                color: Colors.white,
+                                strokeWidth: 3,
+                              ),
                             )
-                          : const Text('Create User'),
+                          : const Text(
+                              'Create User',
+                              style: TextStyle(fontSize: 16),
+                            ),
                     ),
                   ],
                 ),
@@ -290,12 +281,12 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Text(
         title,
         style: TextStyle(
-          fontWeight: FontWeight.w600,
-          fontSize: 16,
+          fontWeight: FontWeight.w700,
+          fontSize: 17,
           color: Theme.of(context).colorScheme.primary,
         ),
       ),
