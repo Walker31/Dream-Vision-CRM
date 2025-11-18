@@ -43,6 +43,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
   List<Map<String, dynamic>> _sources = [];
   List<Map<String, dynamic>> _statuses = [];
   List<Map<String, dynamic>> _schools = [];
+  final List<String> _occupations = ['Defence','Doctor','Farmer','Govt. Service','Police','Private Job','Teacher','Other'];
 
   @override
   void initState() {
@@ -232,6 +233,10 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         leading: const BackButtonIos(),
         title: Text(_isEditMode
             ? 'Edit Enquiry'
@@ -304,6 +309,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
               _formModel.phoneController,
               'Student\'s Phone',
               keyboardType: TextInputType.phone,
+              validatorType: "phone",
               isRequired: false
             ),
             CustomTextField(
@@ -323,6 +329,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
               'Pincode',
               keyboardType: TextInputType.number,
               isRequired: false,
+              validatorType: "pincode",
             ),
           ],
         ),
@@ -333,17 +340,21 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
               _formModel.fatherPhoneController,
               'Father\'s Phone',
               keyboardType: TextInputType.phone,
+              validatorType: "phone",
             ),
             CustomTextField(
               _formModel.motherPhoneController,
               'Mother\'s Phone',
               keyboardType: TextInputType.phone,
+              validatorType: "phone",
               isRequired: false,
             ),
-            CustomTextField(
-              _formModel.fatherOccupationController,
-              'Father\'s Occupation',
-              isRequired: false,
+            CustomDropdownField(
+              label: 'Father\'s Occupation',
+              items: _occupations,
+              value: _formModel.fatherOccupation,
+              onChanged: (val) =>
+                  setState(() => _formModel.fatherOccupation = val),
             ),
           ],
         ),

@@ -8,35 +8,40 @@ import 'package:provider/provider.dart';
 class EmployeeDetailsPage extends StatelessWidget {
   const EmployeeDetailsPage({super.key});
 
-  // Helper to format dates, returns 'N/A' if date is null
+  // Helper to format date
   String _formatDate(String? dateStr) {
     if (dateStr == null || dateStr.isEmpty) return 'N/A';
     try {
       final DateTime date = DateTime.parse(dateStr);
       return DateFormat('d MMMM yyyy').format(date);
-    } catch (e) {
-      return dateStr; // Return original string if parsing fails
+    } catch (_) {
+      return dateStr;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Access the user data from the AuthProvider
     final authProvider = Provider.of<AuthProvider>(context);
     final User? user = authProvider.user;
-    // Show a loading indicator if user data is not yet available
+
     if (user == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Employee Details')),
+        appBar: AppBar(
+          scrolledUnderElevation: 0,
+          surfaceTintColor: Colors.transparent,
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          title: const Text('Employee Details'),
+        ),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
-      // The background color is now handled by the global theme
       appBar: AppBar(
         elevation: 0,
-        // AppBar colors are inherited from the theme
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         leading: IconButton(
           onPressed: () => context.pop(),
           icon: const Icon(Icons.arrow_back_ios_rounded),
@@ -46,11 +51,11 @@ class EmployeeDetailsPage extends StatelessWidget {
           style: TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
+
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // Profile Header
             _buildProfileHeader(
               context: context,
               name: user.fullName,
@@ -60,7 +65,6 @@ class EmployeeDetailsPage extends StatelessWidget {
             ),
             const SizedBox(height: 20),
 
-            // Personal Information Card
             _buildDetailCard(
               context,
               icon: Icons.person_outline,
@@ -142,11 +146,9 @@ class EmployeeDetailsPage extends StatelessWidget {
                   'Status',
                   user.status,
                   valueColor: user.status.toLowerCase() == 'active'
-                      ? Colors
-                            .green
-                            .shade700 // Semantic color
-                      : Colors.red.shade700,
-                ), // Semantic color
+                      ? Theme.of(context).colorScheme.tertiary
+                      : Theme.of(context).colorScheme.error,
+                ),
                 _buildDetailRow(
                   context,
                   Icons.update_outlined,
@@ -167,7 +169,8 @@ class EmployeeDetailsPage extends StatelessWidget {
     );
   }
 
-  // 🧍 Profile Header Section
+  // ---------------- PROFILE HEADER ------------------
+
   Widget _buildProfileHeader({
     required BuildContext context,
     required String name,
@@ -176,44 +179,37 @@ class EmployeeDetailsPage extends StatelessWidget {
     required String profilePictureUrl,
   }) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final cs = theme.colorScheme;
 
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: theme.cardColor, // Theme-aware card color
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: theme.shadowColor.withValues(
-              alpha: 0.1,
-            ), // Theme-aware shadow
+            color: theme.shadowColor.withValues(alpha: 0.1),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
         ],
-        borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         children: [
           CircleAvatar(
             radius: 35,
-            backgroundColor: colorScheme.primaryContainer,
-            child: Icon(
-              Icons.person,
-              size: 40,
-              color: colorScheme.onPrimaryContainer,
-            ),
+            backgroundColor: cs.primaryContainer,
+            child: Icon(Icons.person, size: 40, color: cs.onPrimaryContainer),
           ),
-
           const SizedBox(width: 16),
+
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   name,
-                  style: const TextStyle(
-                    fontSize: 20,
+                  style: theme.textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -221,13 +217,16 @@ class EmployeeDetailsPage extends StatelessWidget {
                 Text(
                   email,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.textTheme.bodyMedium?.color?.withValues(
-                      alpha: 0.7,
-                    ),
+                    color: cs.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text('Staff ID: $staffId', style: theme.textTheme.bodySmall),
+                Text(
+                  'Staff ID: $staffId',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
               ],
             ),
           ),
@@ -236,7 +235,8 @@ class EmployeeDetailsPage extends StatelessWidget {
     );
   }
 
-  // 📄 Detail Card with Title + Icon
+  // ------------------- DETAIL CARD -------------------
+
   Widget _buildDetailCard(
     BuildContext context, {
     required IconData icon,
@@ -244,31 +244,30 @@ class EmployeeDetailsPage extends StatelessWidget {
     required List<Widget> details,
   }) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: theme.cardColor, // Theme-aware card color
+        color: theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
         boxShadow: [
           BoxShadow(
-            color: theme.shadowColor.withValues(
-              alpha: 0.1,
-            ), // Theme-aware shadow
-            blurRadius: 6,
-            offset: const Offset(0, 2),
+            color: theme.colorScheme.shadow.withValues(alpha: 0.2),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
+
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(
-                icon,
-                color: theme.colorScheme.primary,
-              ), // Theme-aware icon color
+              Icon(icon, color: cs.primary),
               const SizedBox(width: 8),
               Text(
                 title,
@@ -279,14 +278,19 @@ class EmployeeDetailsPage extends StatelessWidget {
               ),
             ],
           ),
-          const Divider(height: 24),
+
+          const SizedBox(height: 12),
+          Divider(height: 1, color: cs.outlineVariant),
+          const SizedBox(height: 12),
+
           ...details,
         ],
       ),
     );
   }
 
-  // 📌 Row with Icon + Label + Value
+  // ------------------- DETAIL ROW -------------------
+
   Widget _buildDetailRow(
     BuildContext context,
     IconData icon,
@@ -295,36 +299,37 @@ class EmployeeDetailsPage extends StatelessWidget {
     Color? valueColor,
   }) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
+
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 20, color: theme.colorScheme.primary), // Theme-aware
+          Icon(icon, size: 20, color: cs.primary),
           const SizedBox(width: 12),
+
           SizedBox(
             width: 130,
             child: Text(
               label,
-              style: TextStyle(
-                color: theme.textTheme.bodyMedium?.color?.withValues(
-                  alpha: 0.8,
-                ),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: cs.onSurfaceVariant,
                 fontWeight: FontWeight.w600,
               ),
             ),
           ),
           const SizedBox(width: 8),
+
           Expanded(
             child: Tooltip(
               message: value,
               child: Text(
                 value,
-                style: TextStyle(
-                  fontSize: 16,
+                style: theme.textTheme.bodyLarge?.copyWith(
                   fontWeight: FontWeight.w500,
-                  // Use provided valueColor or default to the theme's text color
-                  color: valueColor ?? theme.textTheme.bodyLarge?.color,
+                  color: valueColor ?? cs.onSurface,
                 ),
                 overflow: TextOverflow.ellipsis,
                 maxLines: 1,

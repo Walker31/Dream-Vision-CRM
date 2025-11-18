@@ -51,22 +51,53 @@ class EnquiryService {
   }
 
   String _handleDioError(DioException e) {
+    // 1. Handle Network/Connection Issues
     if (e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.sendTimeout ||
         e.type == DioExceptionType.receiveTimeout) {
-      return 'Connection timeout. Please try again.';
+      return 'Connection timeout. Please check your internet.';
     }
     if (e.error is SocketException || e.type == DioExceptionType.unknown) {
-      return 'Unable to connect. Please check your network.';
+      return 'No internet connection.';
     }
-    final body = e.response?.data;
-    if (body == null) return 'Server returned empty response.';
-    if (body is Map) {
-      if (body['detail'] != null) return body['detail'].toString();
-      if (body['error'] != null) return body['error'].toString();
-      return body.entries.map((e) => '${e.key}: ${e.value}').join('\n');
+
+    // 2. Handle Server Responses
+    if (e.response != null) {
+      final int statusCode = e.response!.statusCode ?? 0;
+      final dynamic data = e.response!.data;
+
+      // Server Error (500+): Generic message
+      if (statusCode >= 500) {
+        return 'Server error ($statusCode). Please try again later.';
+      }
+
+      // Client Error (400-499): Extract message
+      if (data is Map) {
+        if (data['detail'] != null) return data['detail'].toString();
+        if (data['message'] != null) return data['message'].toString();
+        if (data['error'] != null) return data['error'].toString();
+
+        if (data.isNotEmpty) {
+          final firstKey = data.keys.first;
+          final firstValue = data[firstKey];
+          if (firstValue is List) return "$firstKey: ${firstValue.first}";
+          return "$firstKey: $firstValue";
+        }
+      }
+
+      // --- NEW FIX HERE ---
+      // Check if the response is a String and looks like HTML
+      if (data is String) {
+        if (data.toLowerCase().contains('<!doctype html>') ||
+            data.toLowerCase().contains('<html')) {
+          return 'Server Error: The server returned an invalid response.';
+        }
+        // Otherwise return the plain text string
+        return data;
+      }
     }
-    return body.toString();
+
+    return 'Something went wrong. Please try again.';
   }
 
   Future<Map<String, dynamic>> _getPaginatedList(
@@ -274,6 +305,18 @@ class EnquiryService {
   Future<Map<String, dynamic>> addFollowUp(Map<String, dynamic> data) async {
     try {
       final response = await _dio.post('/follow-ups/', data: data);
+      return response.data ?? {};
+    } catch (e) {
+      throw Exception(e is DioException ? _handleDioError(e) : e.toString());
+    }
+  }
+
+  Future<Map<String, dynamic>> updateFollowUp(
+    int followUpId,
+    Map<String, dynamic> data,
+  ) async {
+    try {
+      final response = await _dio.patch('/follow-ups/$followUpId/', data: data);
       return response.data ?? {};
     } catch (e) {
       throw Exception(e is DioException ? _handleDioError(e) : e.toString());

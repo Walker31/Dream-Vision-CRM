@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:dreamvision/providers/auth_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -15,8 +16,6 @@ class _LoginPageState extends State<LoginPage> {
 
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
-
-  // 1. Add FocusNodes for keyboard navigation
   final _usernameFocus = FocusNode();
   final _passwordFocus = FocusNode();
 
@@ -34,20 +33,17 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
 
-    // Unfocus to hide keyboard before navigating
-    _passwordFocus.unfocus();
     _usernameFocus.unfocus();
+    _passwordFocus.unfocus();
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final success = await authProvider.login(
+    final auth = context.read<AuthProvider>();
+    final success = await auth.login(
       _usernameController.text.trim(),
       _passwordController.text.trim(),
     );
 
     if (success && mounted) {
-      final role = authProvider.user?.role;
-
-      switch (role) {
+      switch (auth.user?.role) {
         case 'Admin':
           context.go('/admin');
           break;
@@ -58,7 +54,6 @@ class _LoginPageState extends State<LoginPage> {
           context.go('/telecaller');
           break;
         default:
-          // Add a fallback just in case
           context.go('/');
       }
     }
@@ -66,209 +61,235 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = context.watch<AuthProvider>();
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final auth = context.watch<AuthProvider>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: const Color.fromRGBO(255, 253, 254, 1),
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 24.0,
-              vertical: 32.0,
+      extendBody: true,
+      body: Stack(
+        children: [
+          // ------------------------------
+          // ✨ BEAUTIFUL GRADIENT BACKGROUND
+          // ------------------------------
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  cs.primary.withValues(alpha: .25),
+                  cs.secondary.withValues(alpha: 0.20),
+                  cs.surfaceContainerHighest.withValues(alpha: 0.10),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
             ),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Image.asset(
-                    'assets/login_img1.jpg',
-                    height: 200,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        height: 200,
-                        color: Colors.grey[200],
-                        child: const Center(child: Icon(Icons.image, size: 50)),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Sign In To\nDream Vision',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1E232C),
+          ),
+
+          // ------------------------------
+          // ✨ FLOATING GLASS LOGIN CARD
+          // ------------------------------
+          Center(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(30),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 400),
+                  padding: const EdgeInsets.all(24),
+                  width: MediaQuery.of(context).size.width * 0.88,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(30),
+                    color: isDark
+                        ? cs.surface.withValues(
+                            alpha: 0.23,
+                          )
+                        : cs.surface,
+                    border: Border.all(
+                      color: cs.onSurface.withValues(alpha: 0.08),
+                      width: 1.2,
                     ),
                   ),
-                  const SizedBox(height: 16),
 
-                  // 2. Moved Error Message Here
-                  AnimatedOpacity(
-                    opacity:
-                        authProvider.errorMessage.isNotEmpty &&
-                            !authProvider.isLoading
-                        ? 1.0
-                        : 0.0,
-                    duration: const Duration(milliseconds: 300),
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 16.0),
-                      child: Text(
-                        // Use a non-empty space to maintain layout, or use AnimatedSize
-                        authProvider.errorMessage.isEmpty
-                            ? ' '
-                            : authProvider.errorMessage,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.redAccent,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Logo
+                        Image.asset(
+                          'assets/logo.jpg',
+                          height: 100,
+                          errorBuilder: (_, __, ___) => Icon(
+                            Icons.school_rounded,
+                            size: 80,
+                            color: cs.onSurface,
+                          ),
                         ),
-                      ),
-                    ),
-                  ),
+                        const SizedBox(height: 12),
 
-                  const Text(
-                    'Username',
-                    style: TextStyle(
-                      color: Color(0xFF6A6A6A),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: _usernameController,
-                    focusNode: _usernameFocus, // 3. Assign focus node
-                    decoration: _buildInputDecoration(
-                      hint: '@username',
-                      icon: Icons.person_outline,
-                    ),
-                    validator: (value) =>
-                        value!.isEmpty ? 'Please enter your username' : null,
-                    textInputAction:
-                        TextInputAction.next, // 4. Set keyboard action
-                    onFieldSubmitted: (_) {
-                      // 5. Jump to password field on "next"
-                      FocusScope.of(context).requestFocus(_passwordFocus);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Password',
-                    style: TextStyle(
-                      color: Color(0xFF6A6A6A),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: _passwordController,
-                    focusNode: _passwordFocus, // 6. Assign focus node
-                    decoration:
-                        _buildInputDecoration(
-                          hint: 'Enter your password...',
+                        Text(
+                          "Welcome to DV40 CRM",
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: cs.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+
+                        Text(
+                          "Please sign in to continue",
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: cs.onSurface.withValues(alpha: 0.7),
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        // Username
+                        _buildInput(
+                          context,
+                          label: "Username",
+                          controller: _usernameController,
+                          focusNode: _usernameFocus,
+                          icon: Icons.person_outline,
+                          hint: "@username",
+                          onSubmit: () => FocusScope.of(
+                            context,
+                          ).requestFocus(_passwordFocus),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // Password
+                        _buildInput(
+                          context,
+                          label: "Password",
+                          controller: _passwordController,
+                          focusNode: _passwordFocus,
                           icon: Icons.lock_outline,
-                        ).copyWith(
-                          suffixIcon: IconButton(
+                          hint: "Enter your password",
+                          obscure: !_isPasswordVisible,
+                          suffix: IconButton(
                             icon: Icon(
                               _isPasswordVisible
-                                  ? Icons.visibility_off_outlined
-                                  : Icons.visibility_outlined,
-                              color: Colors.grey[600],
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                              color: cs.onSurfaceVariant,
                             ),
                             onPressed: () => setState(
                               () => _isPasswordVisible = !_isPasswordVisible,
                             ),
                           ),
+                          onSubmit: _submitForm,
                         ),
-                    obscureText: !_isPasswordVisible,
-                    validator: (value) =>
-                        value!.isEmpty ? 'Please enter a password' : null,
-                    textInputAction: TextInputAction
-                        .done, // 7. Set keyboard action to "done"
-                    onFieldSubmitted: (_) =>
-                        _submitForm(), // 8. Submit form on "done"
-                  ),
-                  const SizedBox(height: 32),
 
-                  // Error message was here, but has been moved up
-                  ElevatedButton(
-                    onPressed: authProvider.isLoading ? null : _submitForm,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF3A5B8A),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                    ),
-                    child: authProvider.isLoading
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 3,
-                              color: Colors.white,
+                        const SizedBox(height: 20),
+
+                        // Error Message
+                        if (auth.errorMessage.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Text(
+                              auth.errorMessage,
+                              style: TextStyle(color: cs.error),
+                              textAlign: TextAlign.center,
                             ),
-                          )
-                        : const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                'Sign In',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              SizedBox(width: 8),
-                              Icon(
-                                Icons.arrow_forward_ios_rounded,
-                                color: Colors.white,
-                                size: 18,
-                              ),
-                            ],
                           ),
+                      SizedBox(
+                        width: double.infinity,
+                        // Use FilledButton for a modern, solid M3 style
+                        child: FilledButton(
+                          onPressed: auth.isLoading ? null : _submitForm,
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16), // A bit more padding
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20), // Match text fields
+                            ),
+                          ),
+                          child: auth.isLoading
+                              ? SizedBox( // Constrain the indicator size
+                                  height: 24,
+                                  width: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 3, // Slightly thicker
+                                    valueColor: AlwaysStoppedAnimation(
+                                      // onPrimary is picked up automatically,
+                                      // but we can be explicit
+                                      Theme.of(context).colorScheme.onPrimary,
+                                    ),
+                                  ),
+                                )
+                              : const Text(
+                                  "Sign In",
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                        ),
+                      ),],
+                    ),
                   ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  InputDecoration _buildInputDecoration({
+  Widget _buildInput(
+    BuildContext context, {
+    required String label,
     required String hint,
     required IconData icon,
+    required TextEditingController controller,
+    required FocusNode focusNode,
+    Widget? suffix,
+    bool obscure = false,
+    required VoidCallback onSubmit,
   }) {
-    // ... (This function remains unchanged)
-    return InputDecoration(
-      hintText: hint,
-      hintStyle: TextStyle(color: Colors.grey[400]),
-      prefixIcon: Icon(icon, color: Colors.grey[600]),
-      filled: true,
-      fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(30),
-        borderSide: BorderSide(color: Colors.grey[300]!),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(30),
-        borderSide: const BorderSide(color: Color(0xFF3A5B8A), width: 2),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(30),
-        borderSide: const BorderSide(color: Colors.redAccent),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(30),
-        borderSide: const BorderSide(color: Colors.redAccent, width: 2),
-      ),
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: cs.onSurface,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextFormField(
+          controller: controller,
+          focusNode: focusNode,
+          obscureText: obscure,
+          onFieldSubmitted: (_) => onSubmit(),
+          validator: (v) => v!.isEmpty ? "Please enter your $label" : null,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: cs.surface.withValues(alpha: 0.35),
+            hintText: hint,
+            hintStyle: TextStyle(color: cs.onSurfaceVariant),
+            prefixIcon: Icon(icon, color: cs.primary),
+            suffixIcon: suffix,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(20),
+              borderSide: BorderSide(color: cs.outline),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(20),
+              borderSide: BorderSide(color: cs.primary, width: 2),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

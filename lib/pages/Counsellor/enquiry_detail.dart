@@ -162,56 +162,58 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
       }
     }
   }
+
   Future<void> _deleteEnquiry(int id) async {
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) => const Center(child: CircularProgressIndicator()),
-  );
-
-  try {
-    await _enquiryService.deleteEnquiry(id);
-
-    if (mounted) Navigator.pop(context); // close loader
-    if (mounted) Navigator.pop(context, true); // go back
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Enquiry deleted successfully."),
-        backgroundColor: Colors.green,
-      ),
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
     );
-  } catch (e) {
-    if (mounted) Navigator.pop(context);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("Failed to delete enquiry: $e"),
-        backgroundColor: Colors.red,
-      ),
-    );
+    try {
+      await _enquiryService.deleteEnquiry(id);
+
+      if (mounted) Navigator.pop(context); // close loader
+      if (mounted) Navigator.pop(context, true); // go back
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Enquiry deleted successfully."),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Failed to delete enquiry: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
-}
-
 
   void _showDeleteEnquiryDialog(Enquiry enquiry) {
-  showDialog(
-    context: context,
-    builder: (context) {
-      return DeleteConfirmationDialog(
-        title: "Confirm Deletion",
-        message:
-            "Are you sure you want to delete the enquiry for ${enquiry.firstName} ${enquiry.lastName ?? ''}? This cannot be undone.",
-        onConfirm: () async {
-          await _deleteEnquiry(enquiry.id);
-        },
-      );
-    },
-  );
+    showDialog(
+      context: context,
+      builder: (context) {
+        return DeleteConfirmationDialog(
+          title: "Confirm Deletion",
+          message:
+              "Are you sure you want to delete the enquiry for ${enquiry.firstName} ${enquiry.lastName ?? ''}? This cannot be undone.",
+          onConfirm: () async {
+            await _deleteEnquiry(enquiry.id);
+          },
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return FutureBuilder<Enquiry>(
       future: _enquiryFuture,
       builder: (context, snapshot) {
@@ -230,11 +232,7 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
                 label: const Text('Assign Counsellor'),
                 onPressed: () =>
                     _showUserSelectionDialog(context, 'Counsellor', enquiry.id),
-                style: TextButton.styleFrom(
-                  foregroundColor: Theme.of(
-                    context,
-                  ).appBarTheme.foregroundColor,
-                ),
+                style: TextButton.styleFrom(foregroundColor: cs.primary),
               ),
             );
           }
@@ -245,11 +243,7 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
                 label: const Text('Assign Telecaller'),
                 onPressed: () =>
                     _showUserSelectionDialog(context, 'Telecaller', enquiry.id),
-                style: TextButton.styleFrom(
-                  foregroundColor: Theme.of(
-                    context,
-                  ).appBarTheme.foregroundColor,
-                ),
+                style: TextButton.styleFrom(foregroundColor: cs.primary),
               ),
             );
           }
@@ -257,6 +251,9 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
 
         return Scaffold(
           appBar: AppBar(
+            scrolledUnderElevation: 0,
+            surfaceTintColor: Colors.transparent,
+            backgroundColor: cs.surface,
             leading: const BackButtonIos(),
             title: const Text('Enquiry Details'),
             elevation: 1,
@@ -268,7 +265,10 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
-                    child: Text('Failed to load enquiry: ${snapshot.error}'),
+                    child: Text(
+                      'Failed to load enquiry: ${snapshot.error}',
+                      style: TextStyle(color: cs.error),
+                    ),
                   ),
                 )
               : snapshot.hasData
@@ -276,20 +276,24 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
                   onRefresh: _refreshEnquiryData,
                   child: _buildDetailsView(context, enquiry!),
                 )
-              : const Center(child: Text('No enquiry data found.')),
+              : Center(
+                  child: Text(
+                    'No enquiry data found.',
+                    style: TextStyle(color: cs.onSurfaceVariant),
+                  ),
+                ),
           floatingActionButton: enquiry != null
               ? SpeedDial(
                   icon: Icons.menu,
                   activeIcon: Icons.close,
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Colors.white,
+                  backgroundColor: cs.primary,
+                  foregroundColor: cs.onPrimary,
                   overlayColor: Colors.black,
                   overlayOpacity: 0.4,
                   spacing: 12,
                   spaceBetweenChildren: 12,
                   elevation: 6,
                   shape: const CircleBorder(),
-
                   children: [
                     SpeedDialChild(
                       child: const Icon(Icons.edit_outlined),
@@ -307,7 +311,7 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
                       labelStyle: const TextStyle(fontSize: 14),
                       onTap: () {
                         _showDeleteEnquiryDialog(enquiry);
-                      }
+                      },
                     ),
                     SpeedDialChild(
                       child: const Icon(Icons.history_outlined),
@@ -344,9 +348,10 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
           children: [
             _buildHeader(context, enquiry),
             const SizedBox(height: 24),
-            _buildContactCard(enquiry),
+            _buildContactCard(context, enquiry),
             const SizedBox(height: 16),
             _buildInfoCard(
+              context: context,
               title: 'Enquiry Details',
               icon: Icons.info_outline,
               details: {
@@ -357,6 +362,7 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
             ),
             const SizedBox(height: 16),
             _buildInfoCard(
+              context: context,
               title: 'Personal Information',
               icon: Icons.person_outline,
               details: {
@@ -368,6 +374,7 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
             ),
             const SizedBox(height: 16),
             _buildInfoCard(
+              context: context,
               title: 'Administrative Details',
               icon: Icons.admin_panel_settings_outlined,
               details: {
@@ -386,14 +393,18 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
 
   Widget _buildHeader(BuildContext context, Enquiry enquiry) {
     final fullName = '${enquiry.firstName} ${enquiry.lastName ?? ''}';
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           fullName,
-          style: Theme.of(
-            context,
-          ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: cs.onSurface,
+          ),
         ),
         const SizedBox(height: 12),
         Wrap(
@@ -403,27 +414,69 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
             if (enquiry.currentStatusName != null)
               Chip(
                 label: Text(enquiry.currentStatusName!),
-                avatar: const Icon(Icons.flag_outlined, size: 18),
-                backgroundColor: Colors.blue.shade50,
-                labelStyle: TextStyle(color: Colors.blue.shade800),
+                avatar: Icon(
+                  Icons.flag_outlined,
+                  size: 18,
+                  color: isDark ? Colors.blue.shade200 : Colors.blue.shade800,
+                ),
+                backgroundColor: isDark
+                    ? Colors.blue.shade900.withAlpha(100)
+                    : Colors.blue.shade50,
+                labelStyle: TextStyle(
+                  color: isDark ? Colors.blue.shade100 : Colors.blue.shade800,
+                ),
+                side: BorderSide.none,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
               ),
             if (enquiry.leadTemperature != null)
               Chip(
                 label: Text(enquiry.leadTemperature!),
-                avatar: const Icon(Icons.thermostat_outlined, size: 18),
+                avatar: Icon(
+                  Icons.thermostat_outlined,
+                  size: 18,
+                  color: _getTemperatureColor(
+                    context,
+                    enquiry.leadTemperature!,
+                    true,
+                  ),
+                ),
                 backgroundColor: _getTemperatureColor(
+                  context,
                   enquiry.leadTemperature!,
-                ).withAlpha(25),
+                  false,
+                ).withValues(alpha: 0.15),
                 labelStyle: TextStyle(
-                  color: _getTemperatureColor(enquiry.leadTemperature!),
+                  color: _getTemperatureColor(
+                    context,
+                    enquiry.leadTemperature!,
+                    true,
+                  ),
+                ),
+                side: BorderSide.none,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
                 ),
               ),
             if (enquiry.isAdmissionConfirmed)
               Chip(
                 label: const Text('Admission Confirmed'),
-                avatar: const Icon(Icons.check_circle_outline, size: 18),
-                backgroundColor: Colors.green.shade50,
-                labelStyle: TextStyle(color: Colors.green.shade800),
+                avatar: Icon(
+                  Icons.check_circle_outline,
+                  size: 18,
+                  color: isDark ? Colors.green.shade200 : Colors.green.shade800,
+                ),
+                backgroundColor: isDark
+                    ? Colors.green.shade900.withAlpha(100)
+                    : Colors.green.shade50,
+                labelStyle: TextStyle(
+                  color: isDark ? Colors.green.shade100 : Colors.green.shade800,
+                ),
+                side: BorderSide.none,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
               ),
           ],
         ),
@@ -431,21 +484,31 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
     );
   }
 
-  Widget _buildContactCard(Enquiry enquiry) {
+  Widget _buildContactCard(BuildContext context, Enquiry enquiry) {
     return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 0,
+      color: Theme.of(context).colorScheme.surfaceContainer,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: Theme.of(
+            context,
+          ).colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: Column(
           children: [
             _buildContactTile(
+              context,
               icon: Icons.phone_outlined,
               value: enquiry.phoneNumber,
               label: 'Primary Phone',
             ),
             if (enquiry.email != null && enquiry.email!.isNotEmpty)
               _buildContactTile(
+                context,
                 icon: Icons.email_outlined,
                 value: enquiry.email!,
                 label: 'Email',
@@ -453,6 +516,7 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
             if (enquiry.fatherPhoneNumber != null &&
                 enquiry.fatherPhoneNumber!.isNotEmpty)
               _buildContactTile(
+                context,
                 icon: Icons.phone_android_outlined,
                 value: enquiry.fatherPhoneNumber!,
                 label: "Father's Phone",
@@ -460,6 +524,7 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
             if (enquiry.motherPhoneNumber != null &&
                 enquiry.motherPhoneNumber!.isNotEmpty)
               _buildContactTile(
+                context,
                 icon: Icons.phone_android_outlined,
                 value: enquiry.motherPhoneNumber!,
                 label: "Mother's Phone",
@@ -470,24 +535,29 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
     );
   }
 
-  Widget _buildContactTile({
+  Widget _buildContactTile(
+    BuildContext context, {
     required IconData icon,
     required String value,
     required String label,
   }) {
+    final cs = Theme.of(context).colorScheme;
     return ListTile(
-      leading: Icon(icon, color: Colors.blueGrey),
-      title: Text(value),
-      subtitle: Text(label),
+      leading: Icon(icon, color: cs.primary),
+      title: Text(value, style: TextStyle(color: cs.onSurface)),
+      subtitle: Text(label, style: TextStyle(color: cs.onSurfaceVariant)),
       dense: true,
     );
   }
 
   Widget _buildInfoCard({
+    required BuildContext context,
     required String title,
     required IconData icon,
     required Map<String, dynamic> details,
   }) {
+    final cs = Theme.of(context).colorScheme;
+
     final validDetails = details.entries
         .where(
           (entry) =>
@@ -502,8 +572,12 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
     }
 
     return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 0,
+      color: cs.surfaceContainer,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5)),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -511,18 +585,19 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
           children: [
             Row(
               children: [
-                Icon(icon, color: Colors.indigo.shade400, size: 20),
+                Icon(icon, color: cs.tertiary, size: 20),
                 const SizedBox(width: 8),
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
+                    color: cs.onSurface,
                   ),
                 ),
               ],
             ),
-            const Divider(height: 20, thickness: 0.5),
+            Divider(height: 20, thickness: 0.5, color: cs.outlineVariant),
             ...validDetails.map((entry) {
               Widget valueWidget;
               if (entry.value is Map) {
@@ -531,17 +606,19 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
                 final role = userData['role'] ?? '';
                 valueWidget = Text(
                   '$name ${role.isNotEmpty ? '($role)' : ''}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w500,
                     fontSize: 14,
+                    color: cs.onSurface,
                   ),
                 );
               } else {
                 valueWidget = Text(
                   entry.value?.toString() ?? 'N/A',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w500,
                     fontSize: 14,
+                    color: cs.onSurface,
                   ),
                 );
               }
@@ -555,8 +632,8 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
                       flex: 2,
                       child: Text(
                         '${entry.key}:',
-                        style: const TextStyle(
-                          color: Colors.black54,
+                        style: TextStyle(
+                          color: cs.onSurfaceVariant,
                           fontSize: 14,
                         ),
                       ),
@@ -573,16 +650,26 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
     );
   }
 
-  Color _getTemperatureColor(String? temp) {
+  Color _getTemperatureColor(BuildContext context, String? temp, bool isText) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     switch (temp?.toLowerCase()) {
       case 'hot':
-        return Colors.red.shade700;
+        return isText
+            ? (isDark ? Colors.red.shade200 : Colors.red.shade700)
+            : (isDark ? Colors.red : Colors.red);
       case 'warm':
-        return Colors.orange.shade700;
+        return isText
+            ? (isDark ? Colors.orange.shade200 : Colors.orange.shade800)
+            : (isDark ? Colors.orange : Colors.orange);
       case 'cold':
-        return Colors.blue.shade700;
+        return isText
+            ? (isDark ? Colors.blue.shade200 : Colors.blue.shade700)
+            : (isDark ? Colors.blue : Colors.blue);
       default:
-        return Colors.grey.shade600;
+        return isText
+            ? Theme.of(context).colorScheme.onSurfaceVariant
+            : Theme.of(context).colorScheme.surfaceContainerHighest;
     }
   }
 }

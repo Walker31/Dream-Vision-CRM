@@ -108,7 +108,6 @@ class _AdminDashboardState extends State<AdminDashboard>
         return Colors.blue.shade600;
       case 'converted':
         return Colors.green.shade600;
-      case 'needs follow-up':
       case 'follow-up':
         return Colors.orange.shade600;
       case 'closed':
@@ -160,15 +159,15 @@ class _AdminDashboardState extends State<AdminDashboard>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         title: const Text('Admin Dashboard'),
         leading: Builder(
           builder: (context) => IconButton(
-            icon: Padding(
-              padding: const EdgeInsets.only(left: 8.0),
-              child: Image.asset(
-                'assets/logo.jpg',
-                errorBuilder: (c, e, s) => const Icon(Icons.menu),
-              ),
+            icon: Image.asset(
+              'assets/login_bg.png',
+              errorBuilder: (c, e, s) => const Icon(Icons.menu),
             ),
             onPressed: () => Scaffold.of(context).openDrawer(),
             tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
@@ -198,7 +197,7 @@ class _AdminDashboardState extends State<AdminDashboard>
         icon: Icons.add,
         activeIcon: Icons.close,
         backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Colors.white,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         elevation: 8,
         spaceBetweenChildren: 10,
         animationCurve: Curves.easeInOutBack,
@@ -422,14 +421,11 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) {
-    final theme = Theme.of(context);
-    final isDarkMode = theme.brightness == Brightness.dark;
 
-    final containerColor = isDarkMode
-        ? theme.colorScheme.surface
-        : theme.scaffoldBackgroundColor;
-
-    return Container(color: containerColor, child: _tabBar);
+    return Container(
+      color: Theme.of(context).colorScheme.surface, 
+      child: _tabBar,
+    );
   }
 
   @override

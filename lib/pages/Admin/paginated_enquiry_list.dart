@@ -123,37 +123,73 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
     });
   }
 
-  Color _getStatusColor(String status) {
+  // Updated to return a Record (Background Color, Text Color)
+  ({Color bg, Color text}) _getStatusColors(BuildContext context, String status) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    // Helper for base colors
+    Color baseColor;
     switch (status.toLowerCase()) {
       case 'interested':
-        return Colors.blue.shade600;
+        baseColor = Colors.blue;
+        break;
       case 'converted':
-        return Colors.green.shade600;
+        baseColor = Colors.green;
+        break;
       case 'needs follow-up':
       case 'follow-up':
-        return Colors.orange.shade600;
+        baseColor = Colors.orange;
+        break;
       case 'closed':
-        return Colors.grey.shade600;
+        baseColor = Colors.grey;
+        break;
       default:
-        return Colors.purple.shade600;
+        baseColor = Colors.purple;
+    }
+
+    if (isDark) {
+      // Dark Mode: Dark background, light text
+      return (
+        bg: baseColor.withValues(alpha: 0.2), 
+        text: baseColor.withValues(alpha: 0.9) // Slightly lighter shade logic handled by Flutter usually, but using alpha is safer
+      );
+    } else {
+      // Light Mode: Light background, dark text (Standard Chip style)
+      // Or Solid background, White text (Your previous style)
+      // Let's stick to Solid for Light mode as it pops more
+      return (bg: baseColor.withValues(alpha: 0.8), text: Colors.white);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
+          padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 12.0),
           child: TextField(
             onChanged: _onSearchChanged,
             decoration: InputDecoration(
               hintText: 'Search in ${widget.type.name}...',
-              prefixIcon: const Icon(Icons.search),
+              hintStyle: TextStyle(color: cs.onSurfaceVariant),
+              prefixIcon: Icon(Icons.search, color: cs.onSurfaceVariant),
+              filled: true,
+              fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.3),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8.0),
+                borderRadius: BorderRadius.circular(12.0),
+                borderSide: BorderSide.none, // Cleaner look
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12.0),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12.0),
+                borderSide: BorderSide(color: cs.outline.withValues(alpha: 0.2)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12.0),
+                borderSide: BorderSide(color: cs.primary, width: 1.5),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16.0),
             ),
           ),
         ),
@@ -162,11 +198,18 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
         else if (_enquiries.isEmpty && !_isLoading)
           Expanded(
             child: Center(
-              child: Text(
-                _searchQuery != null && _searchQuery!.isNotEmpty
-                    ? 'No enquiries found for "$_searchQuery".'
-                    : 'No ${widget.type.name} enquiries found.',
-                style: TextStyle(color: Colors.grey[600]),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.search_off_outlined, size: 48, color: cs.outline),
+                  const SizedBox(height: 16),
+                  Text(
+                    _searchQuery != null && _searchQuery!.isNotEmpty
+                        ? 'No enquiries found for "$_searchQuery".'
+                        : 'No ${widget.type.name} enquiries found.',
+                    style: TextStyle(color: cs.onSurfaceVariant, fontSize: 16),
+                  ),
+                ],
               ),
             ),
           )
@@ -190,53 +233,101 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
                 final fullName =
                     '${enquiry.firstName} ${enquiry.lastName ?? ''}'.trim();
                 final status = enquiry.currentStatusName ?? 'Unknown';
+                final statusColors = _getStatusColors(context, status);
+
                 return Card(
                   margin: EdgeInsets.zero,
-                  child: ListTile(
-                    title: Text(
-                      fullName,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Text(enquiry.phoneNumber),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Chip(
-                          label: Text(
-                            status,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                            ),
-                          ),
-                          backgroundColor: _getStatusColor(status),
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          materialTapTargetSize:
-                              MaterialTapTargetSize.shrinkWrap,
-                          labelPadding: const EdgeInsets.symmetric(
-                            horizontal: 4.0,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.history,
-                            color: Colors.blueGrey,
-                          ),
-                          tooltip: 'View Follow-ups',
-                          onPressed: () {
-                            context.push(
-                              '/follow-ups/${enquiry.id}',
-                              extra: fullName,
-                            );
-                          },
-                        ),
-                      ],
-                    ),
+                  elevation: 0,
+                  color: cs.surfaceContainerLow, // Slightly distinct from background
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.4)),
+                  ),
+                  child: InkWell(
                     onTap: () => context.push('/enquiry/${enquiry.id}'),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  fullName,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: cs.onSurface,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              // Status Chip
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4
+                                ),
+                                decoration: BoxDecoration(
+                                  color: statusColors.bg,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  status,
+                                  style: TextStyle(
+                                    color: statusColors.text,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Icon(Icons.phone_outlined, 
+                                size: 16, color: cs.onSurfaceVariant),
+                              const SizedBox(width: 6),
+                              Text(
+                                enquiry.phoneNumber,
+                                style: TextStyle(
+                                  color: cs.onSurfaceVariant,
+                                  fontSize: 13
+                                ),
+                              ),
+                              const Spacer(),
+                              // History Button
+                              SizedBox(
+                                width: 32,
+                                height: 32,
+                                child: IconButton(
+                                  padding: EdgeInsets.zero,
+                                  icon: Icon(
+                                    Icons.history,
+                                    color: cs.primary,
+                                    size: 20,
+                                  ),
+                                  tooltip: 'View Follow-ups',
+                                  onPressed: () {
+                                    context.push(
+                                      '/follow-ups/${enquiry.id}',
+                                      extra: fullName,
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 );
               },
-              separatorBuilder: (context, index) => const SizedBox(height: 8),
+              separatorBuilder: (context, index) => const SizedBox(height: 12),
             ),
           ),
       ],

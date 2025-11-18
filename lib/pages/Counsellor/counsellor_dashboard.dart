@@ -96,10 +96,13 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
 
     return Scaffold(
       appBar: AppBar(
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         leading: Padding(
           padding: const EdgeInsets.only(left: 16.0),
           child: Image.asset(
-            'assets/logo.jpg',
+            'assets/login_bg.png',
             width: 40,
             errorBuilder: (context, error, stackTrace) {
               _logger.e(error);
@@ -122,10 +125,6 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
         ),
         title: const Text('Counsellor Dashboard'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_none_outlined),
-            onPressed: () {},
-          ),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => context.push('/settings'),
@@ -197,12 +196,12 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
           }
         },
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: theme.colorScheme.secondaryContainer,
+        foregroundColor: theme.colorScheme.onSecondaryContainer,
+        shape: const CircleBorder(),
         onPressed: () => context.push('/add-enquiry'),
-        label: const Text('New Enquiry'),
-        icon: const Icon(Icons.add),
-        backgroundColor: theme.primaryColor,
-        foregroundColor: Colors.white,
+        child: const Icon(Icons.add),
       ),
     );
   }

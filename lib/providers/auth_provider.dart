@@ -1,6 +1,4 @@
 // lib/providers/auth_provider.dart
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:dreamvision/services/auth_service.dart';
 import 'package:dreamvision/services/api_client.dart';
@@ -34,7 +32,8 @@ class AuthProvider with ChangeNotifier {
     _clearError();
 
     try {
-      // Step 1: Login to get and store tokens. This does not return user data.
+      // Step 1: Login to get and store tokens. 
+      // AuthService handles the API call and secure storage.
       await _authService.login(username, password);
       
       // Step 2: After a successful login, fetch the user's profile data.
@@ -44,7 +43,8 @@ class AuthProvider with ChangeNotifier {
       return true; // Success!
       
     } catch (e) {
-      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      // Clean up the exception message for the UI
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
       _setLoading(false);
       return false; // Failed
     }
@@ -53,25 +53,27 @@ class AuthProvider with ChangeNotifier {
   /// Fetches the user profile from the server using the stored token.
   Future<void> _fetchUserProfile() async {
     try {
-      final response = await _apiClient.get('/users/profile/'); // Use ApiClient
+      // FIXED: ApiClient.get now returns the data (Map) directly.
+      // We don't check statusCode here because ApiClient throws an exception on error.
+      final dynamic responseData = await _apiClient.get('/users/profile/'); 
       
-      if (response.statusCode == 200) {
-        final profileData = json.decode(response.body);
-        _user = User.fromJson(profileData); // Use the corrected fromJson
+      if (responseData is Map<String, dynamic>) {
+        // JSON decoding is already done by Dio
+        _user = User.fromJson(responseData); 
         notifyListeners();
       } else {
-        await logout(); // Fail safely
-        throw Exception('Could not fetch user profile.');
+        throw Exception('Invalid profile data format received.');
       }
     } catch (e) {
-      await logout(); // Fail safely
+      // If profile fetch fails, we shouldn't stay "logged in" with no user data.
+      await logout(); 
       rethrow;
     }
   }
 
   /// Logs the user out and clears all user data and tokens.
   Future<void> logout() async {
-    await _authService.logout(); // This should clear tokens from secure storage
+    await _authService.logout(); // Clears tokens from secure storage
     _user = null;
     notifyListeners();
   }

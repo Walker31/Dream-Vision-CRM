@@ -123,6 +123,9 @@ class _AllEnquiriesPageState extends State<AllEnquiriesPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         leading: const BackButtonIos(),
         title: const Text('All Enquiries'),
         bottom: PreferredSize(

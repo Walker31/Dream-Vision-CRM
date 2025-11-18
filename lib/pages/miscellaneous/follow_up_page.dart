@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:logger/logger.dart';
 import '../../services/enquiry_service.dart';
 import '../../widgets/back_button.dart';
+import '../../models/enquiry_model.dart';
+import '../Telecaller/follow_up_sheet.dart';
+
+// ------------------------------------------------------
+// Model Classes
+// ------------------------------------------------------
 
 class FollowUpUser {
   final String fullName;
-
   FollowUpUser({required this.fullName});
 
   factory FollowUpUser.fromJson(Map<String, dynamic> json) {
@@ -36,7 +40,7 @@ class FollowUp {
   factory FollowUp.fromJson(Map<String, dynamic> json) {
     return FollowUp(
       id: json['id'],
-      remarks: json['remarks']?.isNotEmpty == true
+      remarks: (json['remarks'] ?? '').isNotEmpty
           ? json['remarks']
           : 'No remarks provided.',
       statusBeforeFollowUpName: json['status_before_follow_up_name'],
@@ -47,6 +51,10 @@ class FollowUp {
     );
   }
 }
+
+// ------------------------------------------------------
+// FollowUp Page
+// ------------------------------------------------------
 
 class FollowUpPage extends StatefulWidget {
   final int enquiryId;
@@ -63,61 +71,96 @@ class FollowUpPage extends StatefulWidget {
 }
 
 class _FollowUpPageState extends State<FollowUpPage> {
-  final EnquiryService _enquiryService = EnquiryService();
-  late Future<List<FollowUp>> _followUpsFuture;
-  Logger logger = Logger();
+  final EnquiryService _service = EnquiryService();
+  late Future<List<FollowUp>> _followUps;
 
   @override
   void initState() {
     super.initState();
-    _fetchFollowUps();
+    _loadFollowUps();
   }
 
-  void _fetchFollowUps() {
-    _followUpsFuture = _enquiryService
+  void _loadFollowUps() {
+    _followUps = _service
         .getFollowUpsForEnquiry(widget.enquiryId)
-        .then((data) => data.map((item) => FollowUp.fromJson(item)).toList());
+        .then((list) => list.map((e) => FollowUp.fromJson(e)).toList());
+  }
+
+  Future<void> _openEditor(FollowUp? followUp) async {
+    try {
+      final enquiryData = await _service.getEnquiryById(widget.enquiryId);
+      final enquiry = Enquiry.fromJson(enquiryData);
+      if (mounted) {
+        final result = await showModalBottomSheet<bool?>(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (context) =>
+              AddFollowUpSheet(enquiry: enquiry, existingFollowUp: followUp),
+        );
+        if (mounted && result == true) {
+          setState(() => _loadFollowUps());
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to open editor: $e')));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        backgroundColor: cs.surface,
         leading: const BackButtonIos(),
         title: const Text('Follow-up History'),
       ),
       body: FutureBuilder<List<FollowUp>>(
-        future: _followUpsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+        future: _followUps,
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (snapshot.hasError) {
+
+          if (snap.hasError) {
             return Center(
               child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text('Failed to load follow-ups: ${snapshot.error}'),
-              ),
-            );
-          }
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(
-              child: Text(
-                'No follow-ups have been recorded yet.',
-                style: TextStyle(fontSize: 16, color: Colors.grey),
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Failed to load follow-ups:\n${snap.error}',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: cs.error),
+                ),
               ),
             );
           }
 
-          final followUps = snapshot.data!;
+          final data = snap.data!;
+          if (data.isEmpty) {
+            return Center(
+              child: Text(
+                'No follow-ups recorded yet.',
+                style: TextStyle(fontSize: 16, color: cs.onSurfaceVariant),
+              ),
+            );
+          }
+
           return ListView.builder(
-            padding: const EdgeInsets.all(16.0),
-            itemCount: followUps.length,
-            itemBuilder: (context, index) {
+            padding: const EdgeInsets.all(16),
+            itemCount: data.length,
+            itemBuilder: (context, i) {
               return _TimelineTile(
-                followUp: followUps[index],
-                isFirst: index == 0,
-                isLast: index == followUps.length - 1,
+                followUp: data[i],
+                isFirst: i == 0,
+                isLast: i == data.length - 1,
+                onEdit: () => _openEditor(data[i]),
               );
             },
           );
@@ -131,38 +174,111 @@ class _TimelineTile extends StatelessWidget {
   final FollowUp followUp;
   final bool isFirst;
   final bool isLast;
+  final VoidCallback onEdit;
 
-  _TimelineTile({
+  const _TimelineTile({
     required this.followUp,
+    required this.onEdit,
     this.isFirst = false,
     this.isLast = false,
   });
 
-  final Logger logger = Logger();
-  
-
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final time = followUp.timestamp.toLocal();
+
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildTimelineConnector(context),
+          _buildConnector(context),
           const SizedBox(width: 16),
-          Expanded(child: _buildTimelineContent(context)),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 24),
+              child: Material(
+                color: cs.surface,
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onLongPress: () {
+                    onEdit();
+                    ScaffoldMessenger.of(context)
+                      ..hideCurrentSnackBar()
+                      ..showSnackBar(
+                        const SnackBar(
+                          content: Text('Opening follow-up…'),
+                          duration: Duration(milliseconds: 600),
+                        ),
+                      );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: cs.outlineVariant),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          DateFormat.yMMMd().add_jm().format(time),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: isFirst ? cs.primary : cs.onSurface,
+                            fontSize: 16,
+                          ),
+                        ),
+
+                        Divider(color: cs.outlineVariant),
+
+                        _info(
+                          context,
+                          icon: Icons.person_outline,
+                          label: "By:",
+                          value: followUp.user?.fullName ?? "N/A",
+                        ),
+                        const SizedBox(height: 8),
+
+                        _status(context),
+                        const SizedBox(height: 12),
+
+                        Text(
+                          followUp.remarks,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: cs.onSurfaceVariant,
+                            height: 1.5,
+                          ),
+                        ),
+
+                        if (followUp.nextFollowUpDate != null) ...[
+                          const SizedBox(height: 12),
+                          _nextFollowUp(context),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildTimelineConnector(BuildContext context) {
+  // CONNECTOR
+  Widget _buildConnector(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Expanded(
           child: Container(
             width: 2,
-            color: isFirst ? Colors.transparent : Colors.grey.shade300,
+            color: isFirst ? Colors.transparent : cs.outlineVariant,
           ),
         ),
         Container(
@@ -170,113 +286,66 @@ class _TimelineTile extends StatelessWidget {
           height: 12,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: isFirst
-                ? Theme.of(context).primaryColor
-                : Colors.grey.shade400,
+            color: isFirst ? cs.primary : cs.outline,
           ),
         ),
         Expanded(
           child: Container(
             width: 2,
-            color: isLast ? Colors.transparent : Colors.grey.shade300,
+            color: isLast ? Colors.transparent : cs.outlineVariant,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildTimelineContent(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 24.0),
-      child: Card(
-        margin: EdgeInsets.zero,
-        elevation: 1,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                DateFormat.yMMMd().add_jm().format(followUp.timestamp),
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: isFirst
-                      ? Theme.of(context).primaryColor
-                      : Colors.black87,
-                  fontSize: 16,
-                ),
-              ),
-              const Divider(height: 16),
-              _buildInfoRow(
-                context,
-                icon: Icons.person_outline,
-                label: 'By:',
-                value: followUp.user?.fullName ?? 'N/A',
-              ),
-              const SizedBox(height: 8),
-              _buildStatusChange(context),
-              const SizedBox(height: 12),
-              Text(
-                followUp.remarks,
-                style: const TextStyle(fontSize: 14, height: 1.5),
-              ),
-              if (followUp.nextFollowUpDate != null) ...[
-                const SizedBox(height: 12),
-                _buildNextFollowUp(),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatusChange(BuildContext context) {
+  // STATUS CHANGE DISPLAY
+  Widget _status(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final before = followUp.statusBeforeFollowUpName;
     final after = followUp.statusAfterFollowUp;
 
     if (after == null) {
-      return _buildInfoRow(
+      return _info(
         context,
         icon: Icons.flag_outlined,
-        label: 'Status:',
-        value: 'Not recorded',
+        label: "Status:",
+        value: "Not recorded",
+        valueColor: cs.onSurfaceVariant,
       );
     }
 
     if (before == after) {
-      return _buildInfoRow(
+      return _info(
         context,
         icon: Icons.flag_outlined,
-        label: 'Status:',
+        label: "Status:",
         value: "Kept as '$after'",
       );
     }
 
     if (before == null) {
-      return _buildInfoRow(
+      return _info(
         context,
         icon: Icons.flag_outlined,
-        label: 'Status:',
+        label: "Status:",
         value: "Set to '$after'",
-        valueColor: Theme.of(context).primaryColor,
+        valueColor: cs.primary,
       );
     }
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(
           Icons.change_history_outlined,
           size: 16,
-          color: Colors.grey.shade600,
+          color: cs.onSurfaceVariant,
         ),
         const SizedBox(width: 8),
         Text(
           "Status:",
           style: TextStyle(
-            color: Colors.grey.shade700,
+            color: cs.onSurfaceVariant,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -284,9 +353,10 @@ class _TimelineTile extends StatelessWidget {
         Expanded(
           child: RichText(
             text: TextSpan(
-              style: DefaultTextStyle.of(
-                context,
-              ).style.copyWith(fontWeight: FontWeight.w500),
+              style: TextStyle(
+                color: cs.onSurface,
+                fontWeight: FontWeight.w500,
+              ),
               children: [
                 TextSpan(
                   text: before,
@@ -295,9 +365,9 @@ class _TimelineTile extends StatelessWidget {
                   ),
                 ),
                 TextSpan(
-                  text: ' ➔ ',
+                  text: " ➜ ",
                   style: TextStyle(
-                    color: Theme.of(context).primaryColor,
+                    color: cs.primary,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -313,30 +383,28 @@ class _TimelineTile extends StatelessWidget {
     );
   }
 
-  Widget _buildNextFollowUp() {
-    final nextDate = DateTime.parse(followUp.nextFollowUpDate!);
+  // NEXT FOLLOW-UP BOX
+  Widget _nextFollowUp(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final date = DateTime.parse(followUp.nextFollowUpDate!).toLocal();
+
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.amber.shade50,
+        color: cs.secondaryContainer,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.amber.shade300),
+        border: Border.all(color: cs.outlineVariant),
       ),
       child: Row(
         children: [
-          Icon(
-            Icons.event_repeat_outlined,
-            color: Colors.amber.shade800,
-            size: 20,
-          ),
+          Icon(Icons.event_repeat_outlined, size: 20, color: cs.secondary),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Next Follow-up: ${DateFormat.yMMMd().add_jm().format(nextDate)}',
+              "Next Follow-up: ${DateFormat.yMMMd().add_jm().format(date)}",
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                color: Colors.amber.shade900,
+                color: cs.onSecondaryContainer,
               ),
             ),
           ),
@@ -345,21 +413,24 @@ class _TimelineTile extends StatelessWidget {
     );
   }
 
-  Widget _buildInfoRow(
+  // REUSABLE ROW
+  Widget _info(
     BuildContext context, {
     required IconData icon,
     required String label,
     required String value,
     Color? valueColor,
   }) {
+    final cs = Theme.of(context).colorScheme;
+
     return Row(
       children: [
-        Icon(icon, size: 16, color: Colors.grey.shade600),
+        Icon(icon, size: 16, color: cs.onSurfaceVariant),
         const SizedBox(width: 8),
         Text(
           label,
           style: TextStyle(
-            color: Colors.grey.shade700,
+            color: cs.onSurfaceVariant,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -367,8 +438,11 @@ class _TimelineTile extends StatelessWidget {
         Expanded(
           child: Text(
             value,
-            style: TextStyle(fontWeight: FontWeight.w500, color: valueColor),
             overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: valueColor ?? cs.onSurface,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ),
       ],

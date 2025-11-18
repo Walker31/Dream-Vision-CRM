@@ -3,6 +3,7 @@ import 'package:dreamvision/services/enquiry_service.dart';
 import 'package:dreamvision/pages/Telecaller/follow_up_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:logger/logger.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../charts/telecaller_call_chart.dart';
@@ -142,25 +143,30 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        backgroundColor: cs.surface,
         leading: Padding(
           padding: const EdgeInsets.only(left: 16.0),
           child: Image.asset(
-            'assets/logo.jpg',
+            'assets/login_bg.png',
             width: 50,
             errorBuilder: (context, error, stackTrace) {
-              logger.e(error);
               return Container(
                 width: 50,
                 height: 50,
-                color: Colors.grey[700],
-                child: const Center(
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHighest, // Dark Mode Safe
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
                   child: Text(
                     'DV',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: cs.onSurfaceVariant, // Dark Mode Safe
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -181,9 +187,9 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
       ),
       body: RefreshIndicator(onRefresh: _refresh, child: _buildBody()),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: Theme.of(context).primaryColor,
-        foregroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: cs.primary,
+        foregroundColor: cs.onPrimary,
+        shape: const CircleBorder(),
         child: const Icon(Icons.add),
         onPressed: () => context.push('/add-enquiry'),
       ),
@@ -191,6 +197,8 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
   }
 
   Widget _buildBody() {
+    final cs = Theme.of(context).colorScheme;
+
     if (_isFirstLoad && !_isLoadingMore) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -200,7 +208,7 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('Error: $_error'),
+            Text('Error: $_error', style: TextStyle(color: cs.error)),
             const SizedBox(height: 16),
             ElevatedButton(onPressed: _refresh, child: const Text('Retry')),
           ],
@@ -231,6 +239,8 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
   }
 
   Widget _buildFilterChips() {
+    final cs = Theme.of(context).colorScheme;
+
     return Wrap(
       spacing: 8.0,
       runSpacing: 4.0,
@@ -240,14 +250,19 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
           label: Text(filter),
           selected: isSelected,
           showCheckmark: false,
-          selectedColor: Theme.of(context).primaryColor,
+          selectedColor: cs.primary,
+          // Fix: Use onPrimary for selected text so it's visible on dark/light
           labelStyle: TextStyle(
-            color: isSelected
-                ? Colors.white
-                : Theme.of(context).textTheme.bodyLarge?.color,
+            color: isSelected ? cs.onPrimary : cs.onSurfaceVariant,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
           ),
-          backgroundColor: Colors.grey.withAlpha(25),
+          // Fix: Use container color for unselected state
+          backgroundColor: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+          // Remove border to make it look cleaner
+          side: BorderSide.none,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           onSelected: (selected) {
             _onFilterChanged(filter);
           },
@@ -256,14 +271,105 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
     );
   }
 
+  // Helper to determine color and text based on urgency
+  Widget _buildNextFollowUpBadge(BuildContext context, String isoDateString) {
+    final cs = Theme.of(context).colorScheme;
+
+    DateTime targetDate;
+    if (isoDateString.endsWith('Z')) {
+      targetDate = DateTime.parse(isoDateString).toLocal();
+    } else {
+      targetDate = DateTime.parse(isoDateString);
+      if (!targetDate.isUtc) {
+        targetDate = targetDate.toLocal();
+      }
+    }
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final targetDay = DateTime(
+      targetDate.year,
+      targetDate.month,
+      targetDate.day,
+    );
+
+    Color bgColor;
+    Color textColor;
+    String labelText;
+    IconData icon;
+
+    // Adaptive Colors Logic
+    if (targetDate.isBefore(now)) {
+      // Overdue: Red
+      bgColor = cs.errorContainer;
+      textColor = cs.error;
+      labelText = "Overdue";
+      icon = Icons.warning_amber_rounded;
+    } else if (targetDay.isAtSameMomentAs(today)) {
+      // Today: Orange/Tertiary
+      bgColor = cs.tertiaryContainer;
+      textColor = cs.tertiary;
+      labelText = "Today";
+      icon = Icons.today_rounded;
+    } else if (targetDay.isAtSameMomentAs(today.add(const Duration(days: 1)))) {
+      // Tomorrow: Blue/Primary
+      bgColor = cs.primaryContainer;
+      textColor = cs.primary;
+      labelText = "Tomorrow";
+      icon = Icons.event_rounded;
+    } else {
+      // Future: Grey/Surface Variant
+      bgColor = cs.surfaceContainerHighest;
+      textColor = cs.onSurfaceVariant;
+      labelText = DateFormat('MMM d').format(targetDate);
+      icon = Icons.calendar_month_rounded;
+    }
+
+    // Append time (h:mm a)
+    final timeString = DateFormat.jm().format(targetDate);
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bgColor.withValues(alpha: 0.4), // Subtle background
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: textColor.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: textColor),
+          const SizedBox(width: 6),
+          Text(
+            "$labelText • $timeString",
+            style: TextStyle(
+              color: textColor,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildLeadsList() {
+    final cs = Theme.of(context).colorScheme;
+
     if (_enquiries.isEmpty && !_isFirstLoad && !_isLoadingMore) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 32.0),
-          child: Text(
-            'No leads found for "$_selectedFilter".',
-            style: TextStyle(color: Colors.grey[600], fontSize: 16),
+          child: Column(
+            children: [
+              Icon(Icons.search_off_rounded, size: 48, color: cs.outline),
+              const SizedBox(height: 8),
+              Text(
+                'No leads found for "$_selectedFilter".',
+                style: TextStyle(color: cs.onSurfaceVariant, fontSize: 16),
+              ),
+            ],
           ),
         ),
       );
@@ -292,41 +398,107 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
           margin: const EdgeInsets.only(bottom: 12),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.4)),
           ),
-          elevation: 2,
-          child: ListTile(
-            contentPadding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-            title: Text(
-              fullName,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            subtitle: Text(
-              'Status: $status',
-              style: TextStyle(color: Colors.grey[600]),
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.call_outlined),
-                  onPressed: () => _makePhoneCall(enquiry.phoneNumber),
-                  color: Colors.green,
-                  tooltip: 'Call ${enquiry.phoneNumber}',
-                ),
-                IconButton(
-                  icon: const Icon(Icons.history, color: Colors.blueGrey),
-                  tooltip: 'View Follow-ups',
-                  onPressed: () {
-                    context.push('/follow-ups/${enquiry.id}', extra: fullName);
-                  },
-                ),
-                TextButton(
-                  onPressed: () => _showAddFollowUpForm(context, enquiry),
-                  child: const Text('Follow-up'),
-                ),
-              ],
-            ),
+          elevation: 0,
+          color: cs.surfaceContainerLow,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
             onTap: () => context.push('/enquiry/${enquiry.id}'),
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Top Row: Name and Actions
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              fullName,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.flag_outlined,
+                                  size: 14,
+                                  color: cs
+                                      .onSurfaceVariant, // Fix: Use Theme color
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  status,
+                                  style: TextStyle(
+                                    color: cs
+                                        .onSurfaceVariant, // Fix: Use Theme color
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Call Button
+                      IconButton.filledTonal(
+                        icon: const Icon(Icons.call, size: 20),
+                        onPressed: () => _makePhoneCall(enquiry.phoneNumber),
+                        style: IconButton.styleFrom(
+                          // Fix: Make it subtle in dark mode
+                          backgroundColor: Colors.green.withValues(alpha: 0.15),
+                          foregroundColor: Colors.green,
+                        ),
+                        tooltip: 'Call',
+                      ),
+
+                      IconButton.filledTonal(
+                        icon: const Icon(Icons.history, size: 18),
+                        onPressed: () {
+                          context.push(
+                            '/follow-ups/${enquiry.id}',
+                            extra: fullName,
+                          );
+                        },
+                        style: IconButton.styleFrom(
+                          // Fix: Use Secondary container for history
+                          backgroundColor: cs.secondaryContainer.withValues(
+                            alpha: 0.5,
+                          ),
+                          foregroundColor: cs.onSecondaryContainer,
+                        ),
+                        tooltip: 'History',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      if (enquiry.nextFollowUp != null)
+                        _buildNextFollowUpBadge(context, enquiry.nextFollowUp!),
+                      const Spacer(),
+                      FilledButton.icon(
+                        onPressed: () => _showAddFollowUpForm(context, enquiry),
+                        icon: const Icon(Icons.add_comment_outlined, size: 18),
+                        label: const Text('Follow-up'),
+                        style: FilledButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
         );
       },

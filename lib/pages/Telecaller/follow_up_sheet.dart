@@ -1,14 +1,19 @@
-import 'package:dreamvision/services/enquiry_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:logger/web.dart';
-
+import 'package:logger/logger.dart';
+import '../../services/enquiry_service.dart';
 import '../../models/enquiry_model.dart';
+import '../miscellaneous/follow_up_page.dart'; // for FollowUp model
 
 class AddFollowUpSheet extends StatefulWidget {
   final Enquiry enquiry;
+  final FollowUp? existingFollowUp;
 
-  const AddFollowUpSheet({super.key, required this.enquiry});
+  const AddFollowUpSheet({
+    super.key,
+    required this.enquiry,
+    this.existingFollowUp,
+  });
 
   @override
   State<AddFollowUpSheet> createState() => _AddFollowUpSheetState();
@@ -20,20 +25,19 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
   Logger logger = Logger();
   bool _isLoading = false;
 
-  // New state variable for CNR toggle
   bool _isCnr = false;
-
   String? _standard;
   String? _board;
   final Set<String> _selectedExams = {};
   bool? _admissionConfirmed;
-
   final _feedbackController = TextEditingController();
 
   late Future<List<dynamic>> _statusFuture;
   List<dynamic> _statuses = [];
   int? _selectedStatusId;
   bool _isStatusInitialized = false;
+
+  DateTime? _nextFollowUpDate;
 
   @override
   void initState() {
@@ -49,24 +53,34 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
       _statusFuture = _enquiryService.getEnquiryStatuses();
       _statuses = await _statusFuture;
 
-      final currentStatusName = widget.enquiry.currentStatusName;
-      if (currentStatusName != null) {
-        final matchingStatus = _statuses.firstWhere(
-          (status) =>
-              (status['name'] as String).toLowerCase() ==
-              currentStatusName.toLowerCase(),
-          orElse: () => null,
-        );
-        if (matchingStatus != null) {
-          _selectedStatusId = matchingStatus['id'] as int?;
-        } else {
-          logger.w(
-            "Current status name '$currentStatusName' not found in fetched statuses.",
+      // If editing, prefill after statuses loaded
+      if (widget.existingFollowUp != null) {
+        final f = widget.existingFollowUp!;
+        _feedbackController.text = f.remarks;
+        _isCnr = f.remarks.toLowerCase().contains('cnr');
+
+        if (f.nextFollowUpDate != null) {
+          try {
+            _nextFollowUpDate = DateTime.parse(f.nextFollowUpDate!);
+          } catch (_) {
+            _nextFollowUpDate = null;
+          }
+        }
+
+        if (f.statusAfterFollowUp != null) {
+          // statusAfterFollowUp in FollowUp model is a name — try to map to id
+          final matching = _statuses.firstWhere(
+            (s) => (s['name'] as String).toLowerCase() ==
+                f.statusAfterFollowUp!.toLowerCase(),
+            orElse: () => null,
           );
+          if (matching != null) {
+            _selectedStatusId = matching['id'] as int?;
+          }
         }
       }
     } catch (e) {
-      logger.e("Failed to initialize statuses: $e");
+      logger.e('Failed to load statuses: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -76,16 +90,46 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
     }
   }
 
-  Future<void> _submitForm() async {
-    // Only validate the form if CNR is NOT toggled
-    if (!_isCnr && !_formKey.currentState!.validate()) {
-      return; // Validation failed, do nothing
-    }
+  Future<void> _pickNextFollowUpDateTime() async {
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: _nextFollowUpDate ?? DateTime.now().add(const Duration(days: 7)),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
 
-    if (_isLoading) return; // Already submitting
+    if (pickedDate == null) return;
+    if (!mounted) return;
+
+    final initialTime = _nextFollowUpDate != null
+        ? TimeOfDay.fromDateTime(_nextFollowUpDate!)
+        : const TimeOfDay(hour: 10, minute: 0);
+
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: initialTime,
+    );
+
+    if (pickedTime == null) return;
+
+    final combined = DateTime(
+      pickedDate.year,
+      pickedDate.month,
+      pickedDate.day,
+      pickedTime.hour,
+      pickedTime.minute,
+    );
+
+    setState(() => _nextFollowUpDate = combined);
+  }
+
+  Future<void> _submitForm() async {
+    if (!_isCnr && !_formKey.currentState!.validate()) return;
+    if (_isLoading) return;
+
     setState(() => _isLoading = true);
 
-    final Map<String, dynamic> followUpPayload;
+    final Map<String, dynamic> payload;
 
     if (_isCnr) {
       final cnrStatus = _statuses.firstWhere(
@@ -93,7 +137,7 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
         orElse: () => null,
       );
 
-      followUpPayload = {
+      payload = {
         'enquiry': widget.enquiry.id,
         'remarks': 'CNR (Contact Not Received)',
         'status_after_follow_up': cnrStatus?['id'],
@@ -102,7 +146,7 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
         'cnr': true,
       };
     } else {
-      followUpPayload = {
+      payload = {
         'enquiry': widget.enquiry.id,
         'remarks': _feedbackController.text.trim(),
         'status_after_follow_up': _selectedStatusId,
@@ -114,82 +158,47 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
     }
 
     try {
-      await _enquiryService.addFollowUp(followUpPayload);
-      logger.d('Follow-up Submitted: $followUpPayload');
+      if (widget.existingFollowUp == null) {
+        await _enquiryService.addFollowUp(payload);
+      } else {
+        await _enquiryService.updateFollowUp(widget.existingFollowUp!.id, payload);
+      }
 
       if (mounted) {
         Navigator.of(context).pop(true);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Follow-up saved successfully!'),
+          SnackBar(
+            content: Text(widget.existingFollowUp == null
+                ? 'Follow-up saved successfully!'
+                : 'Follow-up updated successfully!'),
             backgroundColor: Colors.green,
           ),
         );
       }
     } catch (e) {
-      logger.e("Failed to save follow-up: $e");
+      logger.e('Failed to save follow-up: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Failed to save follow-up: ${e.toString().replaceFirst("Exception: ", "")}',
-            ),
+            content: Text('Failed to save follow-up: ${e.toString()}'),
             backgroundColor: Colors.red,
           ),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  DateTime? _nextFollowUpDate;
-
-  // --- MODIFICATION: Updated to pick Date and Time ---
-  Future<void> _pickNextFollowUpDateTime() async {
-    // 1. Pick Date
-    final pickedDate = await showDatePicker(
-      context: context,
-      initialDate:
-          _nextFollowUpDate ?? DateTime.now().add(const Duration(days: 7)),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-
-    if (pickedDate == null) return; // User cancelled date picker
-
-    if (!mounted) return; // Check context validity
-
-    // 2. Pick Time
-    final initialTime = _nextFollowUpDate != null
-        ? TimeOfDay.fromDateTime(_nextFollowUpDate!)
-        : const TimeOfDay(hour: 10, minute: 0); // Default to 10:00 AM
-
-    final pickedTime = await showTimePicker(
-      context: context,
-      initialTime: initialTime,
-    );
-
-    if (pickedTime == null) return; // User cancelled time picker
-
-    // 3. Combine and set state
-    final combinedDateTime = DateTime(
-      pickedDate.year,
-      pickedDate.month,
-      pickedDate.day,
-      pickedTime.hour,
-      pickedTime.minute,
-    );
-
-    setState(() {
-      _nextFollowUpDate = combinedDateTime;
-    });
+  @override
+  void dispose() {
+    _feedbackController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).canvasColor,
@@ -217,7 +226,7 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Enquiry Follow-up',
+                      widget.existingFollowUp == null ? 'Enquiry Follow-up' : 'Edit Follow-up',
                       style: Theme.of(context).textTheme.headlineSmall,
                     ),
                     IconButton(
@@ -227,38 +236,26 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
                   ],
                 ),
                 const Divider(),
-                Flexible(
+                Expanded(
                   child: SingleChildScrollView(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _buildInfoTile(
                           'Student Name',
-                          '${widget.enquiry.firstName} ${widget.enquiry.lastName ?? ''}'
-                              .trim(),
+                          '${widget.enquiry.firstName} ${widget.enquiry.lastName ?? ''}'.trim(),
                         ),
-                        _buildInfoTile(
-                          'Mobile No.',
-                          widget.enquiry.phoneNumber,
-                        ),
+                        _buildInfoTile('Mobile No.', widget.enquiry.phoneNumber),
+                        const SizedBox(height: 8),
                         _buildSectionTitle('Follow-up Details'),
-
-                        // --- NEW CNR TOGGLE ---
                         _buildCnrToggle(),
                         const SizedBox(height: 10),
-                        // --- CONDITIONALLY VISIBLE FIELDS ---
                         if (!_isCnr) ...[
                           _buildStatusDropdown(),
                           const SizedBox(height: 16),
-                          // --- MODIFICATION: Using new DateTime picker widget ---
                           _buildDateTimePicker(),
-                          _buildTextField(
-                            _feedbackController,
-                            'Feedback / Remarks',
-                          ),
-                          _buildSectionTitle(
-                            'Academic & Admission Details (Enquiry)',
-                          ),
+                          _buildTextField(_feedbackController, 'Feedback / Remarks'),
+                          _buildSectionTitle('Academic & Admission Details (Enquiry)'),
                           _buildChoiceChipGroup(
                             'Standard',
                             ['12th', '11th', '10th', '9th', '8th'],
@@ -285,30 +282,21 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
                           _buildChoiceChipGroup(
                             'Admission Confirmed',
                             ['Yes', 'No'],
-                            _admissionConfirmed == null
-                                ? null
-                                : (_admissionConfirmed! ? 'Yes' : 'No'),
-                            (val) => setState(
-                              () => _admissionConfirmed = (val == 'Yes'),
-                            ),
+                            _admissionConfirmed == null ? null : (_admissionConfirmed! ? 'Yes' : 'No'),
+                            (val) => setState(() => _admissionConfirmed = (val == 'Yes')),
                           ),
                         ],
-
                         const SizedBox(height: 20),
                         ElevatedButton(
                           onPressed: _isLoading ? null : _submitForm,
                           style: ElevatedButton.styleFrom(
                             minimumSize: const Size(double.infinity, 50),
-                            backgroundColor: Theme.of(context).primaryColor,
-                            foregroundColor: Colors.white,
+                            backgroundColor: cs.primary,
+                            foregroundColor: cs.onPrimary,
                           ),
                           child: _isLoading
-                              ? const CircularProgressIndicator(
-                                  valueColor: AlwaysStoppedAnimation(
-                                    Colors.white,
-                                  ),
-                                )
-                              : const Text('Save Follow-up'),
+                              ? const CircularProgressIndicator(valueColor: AlwaysStoppedAnimation(Colors.white))
+                              : Text(widget.existingFollowUp == null ? 'Save Follow-up' : 'Update Follow-up'),
                         ),
                       ],
                     ),
@@ -322,23 +310,12 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
     );
   }
 
-  // --- NEW HELPER WIDGET FOR CNR TOGGLE ---
   Widget _buildCnrToggle() {
     return SwitchListTile(
-      title: const Text(
-        'CNR (Contact Not Received)', // Changed text back
-        style: TextStyle(fontWeight: FontWeight.w600),
-      ),
+      title: const Text('CNR (Contact Not Received)', style: TextStyle(fontWeight: FontWeight.w600)),
       value: _isCnr,
-      onChanged: (bool value) {
-        setState(() {
-          _isCnr = value;
-        });
-      },
-      secondary: Icon(
-        Icons.phone_missed,
-        color: _isCnr ? Theme.of(context).primaryColor : Colors.grey,
-      ),
+      onChanged: (bool value) => setState(() => _isCnr = value),
+      secondary: Icon(Icons.phone_missed, color: _isCnr ? Theme.of(context).colorScheme.primary : Colors.grey),
       contentPadding: const EdgeInsets.symmetric(vertical: 4.0),
     );
   }
@@ -357,58 +334,38 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
 
     return DropdownButtonFormField<int>(
       initialValue: _selectedStatusId,
-      decoration: const InputDecoration(
-        labelText: 'New Status',
-        border: OutlineInputBorder(),
-      ),
+      decoration: const InputDecoration(labelText: 'New Status', border: OutlineInputBorder()),
       items: _statuses.map((status) {
         return DropdownMenuItem<int>(
           value: status['id'] as int,
           child: Text(status['name'] as String),
         );
       }).toList(),
-      onChanged: (value) {
-        setState(() {
-          _selectedStatusId = value;
-        });
-      },
+      onChanged: (value) => setState(() => _selectedStatusId = value),
       validator: (value) => value == null ? 'Please select a status' : null,
     );
   }
 
-  // --- MODIFICATION: Renamed widget and updated text/format ---
   Widget _buildDateTimePicker() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Next Follow-up Date & Time', // Changed label
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-        ),
+        Text('Next Follow-up Date & Time', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
         const SizedBox(height: 8),
         InkWell(
-          onTap: _pickNextFollowUpDateTime, // Changed function call
+          onTap: _pickNextFollowUpDateTime,
           child: Container(
             height: 55,
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey),
-              borderRadius: BorderRadius.circular(4.0),
-            ),
+            decoration: BoxDecoration(border: Border.all(color: Theme.of(context).colorScheme.outline), borderRadius: BorderRadius.circular(4.0)),
             padding: const EdgeInsets.symmetric(horizontal: 12.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  _nextFollowUpDate == null
-                      ? 'Select date & time (Optional)' // Changed hint
-                      // Changed format to show date and time
-                      : DateFormat.yMMMd().add_jm().format(_nextFollowUpDate!),
-                  style: TextStyle(
-                    color: _nextFollowUpDate == null ? Colors.grey[600] : null,
-                    fontSize: 16,
-                  ),
+                  _nextFollowUpDate == null ? 'Select date & time (Optional)' : DateFormat.yMMMd().add_jm().format(_nextFollowUpDate!),
+                  style: TextStyle(color: _nextFollowUpDate == null ? Theme.of(context).textTheme.bodySmall?.color : null, fontSize: 16),
                 ),
-                const Icon(Icons.calendar_today_outlined, color: Colors.grey),
+                Icon(Icons.calendar_today_outlined, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ],
             ),
           ),
@@ -421,24 +378,13 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
   Widget _buildInfoTile(String label, String value) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      title: Text(label, style: const TextStyle(color: Colors.grey)),
-      subtitle: Text(
-        value,
-        style: Theme.of(
-          context,
-        ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-      ),
+      title: Text(label, style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color)),
+      subtitle: Text(value, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
     );
   }
 
   Widget _buildSectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
-      child: Text(
-        title,
-        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-      ),
-    );
+    return Padding(padding: const EdgeInsets.only(top: 16.0, bottom: 8.0), child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)));
   }
 
   Widget _buildTextField(TextEditingController controller, String label) {
@@ -446,33 +392,18 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: TextFormField(
         controller: controller,
-        decoration: InputDecoration(
-          labelText: label,
-          border: const OutlineInputBorder(),
-        ),
+        decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
         maxLines: 3,
-        validator: (value) =>
-            (value == null || value.isEmpty) ? 'Please enter $label' : null,
+        validator: (value) => (value == null || value.isEmpty) ? 'Please enter $label' : null,
       ),
     );
   }
 
-  Widget _buildChoiceChipGroup(
-    String title,
-    List<String> options,
-    String? groupValue,
-    ValueChanged<String?> onChanged,
-  ) {
+  Widget _buildChoiceChipGroup(String title, List<String> options, String? groupValue, ValueChanged<String?> onChanged) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8.0),
-          child: Text(
-            title,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-          ),
-        ),
+        Padding(padding: const EdgeInsets.only(bottom: 8.0), child: Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14))),
         Wrap(
           spacing: 8.0,
           runSpacing: 4.0,
@@ -482,18 +413,11 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
               label: Text(option),
               selected: isSelected,
               showCheckmark: false,
-              selectedColor: Theme.of(context).primaryColor,
-              labelStyle: TextStyle(
-                color: isSelected
-                    ? Colors.white
-                    : Theme.of(context).textTheme.bodyLarge?.color,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
-              backgroundColor: Colors.grey.withAlpha(25),
+              selectedColor: Theme.of(context).colorScheme.primary,
+              labelStyle: TextStyle(color: isSelected ? Colors.white : Theme.of(context).textTheme.bodyLarge?.color, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal),
+              backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha:0.03),
               onSelected: (selected) {
-                if (selected) {
-                  onChanged(option);
-                }
+                if (selected) onChanged(option);
               },
             );
           }).toList(),
@@ -502,21 +426,11 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
     );
   }
 
-  Widget _buildCheckboxGroup(
-    String title,
-    List<String> options,
-    Set<String> selectedValues,
-  ) {
+  Widget _buildCheckboxGroup(String title, List<String> options, Set<String> selectedValues) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8.0),
-          child: Text(
-            title,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-          ),
-        ),
+        Padding(padding: const EdgeInsets.only(bottom: 8.0), child: Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14))),
         Wrap(
           spacing: 8.0,
           runSpacing: 4.0,
@@ -526,14 +440,9 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
               label: Text(option),
               selected: isSelected,
               showCheckmark: false,
-              selectedColor: Theme.of(context).primaryColor,
-              labelStyle: TextStyle(
-                color: isSelected
-                    ? Colors.white
-                    : Theme.of(context).textTheme.bodyLarge?.color,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
-              backgroundColor: Colors.grey.withAlpha(25),
+              selectedColor: Theme.of(context).colorScheme.primary,
+              labelStyle: TextStyle(color: isSelected ? Colors.white : Theme.of(context).textTheme.bodyLarge?.color, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal),
+              backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha:0.03),
               onSelected: (selected) {
                 setState(() {
                   if (selected) {

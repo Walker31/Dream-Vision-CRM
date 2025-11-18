@@ -1,50 +1,13 @@
 // ignore_for_file: use_build_context_synchronously
 
-import 'dart:typed_data';
 import 'package:dreamvision/widgets/back_button.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'package:go_router/go_router.dart';
 import 'package:logger/logger.dart';
-import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
-import 'package:file_saver/file_saver.dart';
+import '../../models/user_model.dart';
 import '../../services/admin_user.dart';
 import '../../widgets/password_display_dialog.dart';
 
-class User {
-  final int id;
-  final String username;
-  final String email;
-  final String firstName;
-  final String lastName;
-  final String? staffId;
-  final String role;
-
-  String get name => '$firstName $lastName'.trim();
-
-  User({
-    required this.id,
-    required this.username,
-    required this.email,
-    required this.firstName,
-    required this.lastName,
-    this.staffId,
-    required this.role,
-  });
-
-  factory User.fromJson(Map<String, dynamic> json) {
-    final userData = json['user'] as Map<String, dynamic>? ?? {};
-    return User(
-      id: userData['id'] ?? 0,
-      username: userData['username'] ?? 'N/A',
-      email: userData['email'] ?? 'N/A',
-      firstName: userData['first_name'] ?? '',
-      lastName: userData['last_name'] ?? '',
-      staffId: json['staff_id'] as String?,
-      role: json['role'] ?? 'Unknown',
-    );
-  }
-}
 
 class UserListPage extends StatefulWidget {
   const UserListPage({super.key});
@@ -58,7 +21,6 @@ class _UserListPageState extends State<UserListPage> {
   List<User> _allUsers = [];
   List<User> _filteredUsers = [];
   bool _isLoading = true;
-  bool _isExporting = false;
   String? _error;
   Logger logger = Logger();
 
@@ -83,12 +45,14 @@ class _UserListPageState extends State<UserListPage> {
       final users = responseData
           .map((u) => User.fromJson(u as Map<String, dynamic>))
           .toList();
-      setState(() {
-        _allUsers = users;
-        _filterUsers();
-      });
+      if (mounted) {
+        setState(() {
+          _allUsers = users;
+          _filterUsers();
+        });
+      }
     } catch (e) {
-      setState(() => _error = 'Failed to load users: $e');
+      if (mounted) setState(() => _error = 'Failed to load users: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -112,18 +76,33 @@ class _UserListPageState extends State<UserListPage> {
     if (result == true && mounted) _refreshUsers();
   }
 
-  void _deleteUser(User user) {
-    _adminUserService.deleteUser(user.id);
-    setState(() {
-      _allUsers.removeWhere((u) => u.id == user.id);
-      _filterUsers();
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${user.name} has been deleted.'),
-        backgroundColor: Colors.orange[700],
-      ),
-    );
+  // Optimized: Handles errors properly so the UI doesn't lie to the user
+  Future<void> _deleteUser(User user) async {
+    try {
+      await _adminUserService.deleteUser(user.userId);
+      
+      if (mounted) {
+        setState(() {
+          _allUsers.removeWhere((u) => u.userId == user.userId);
+          _filterUsers();
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${user.name} has been deleted.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete user: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _showDeleteConfirmationDialog(User user) {
@@ -144,8 +123,8 @@ class _UserListPageState extends State<UserListPage> {
               ),
               child: const Text('Delete'),
               onPressed: () {
-                _deleteUser(user);
-                Navigator.pop(context);
+                Navigator.pop(context); // Close dialog first
+                _deleteUser(user); // Then call delete
               },
             ),
           ],
@@ -170,7 +149,7 @@ class _UserListPageState extends State<UserListPage> {
             ),
             TextButton(
               style: TextButton.styleFrom(
-                foregroundColor: Theme.of(context).colorScheme.error,
+                foregroundColor: Theme.of(context).colorScheme.primary,
               ),
               onPressed: () async {
                 Navigator.pop(context);
@@ -186,7 +165,7 @@ class _UserListPageState extends State<UserListPage> {
 
   Future<void> _resetPassword(User user) async {
     try {
-      final response = await _adminUserService.resetPassword(user.id);
+      final response = await _adminUserService.resetPassword(user.userId);
       final newPassword = response['new_password'];
       await showDialog(
         context: context,
@@ -199,134 +178,34 @@ class _UserListPageState extends State<UserListPage> {
           );
         },
       );
-
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
-      );
-    }
-  }
-
-  Future<void> _exportUsers() async {
-    if (_filteredUsers.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('No users to export.')));
-      return;
-    }
-
-    setState(() => _isExporting = true);
-
-    try {
-      final workbook = xlsio.Workbook();
-      final sheet = workbook.worksheets[0];
-
-      sheet.getRangeByName('A1').setText('User Directory');
-      final titleStyle = workbook.styles.add('title');
-      titleStyle.bold = true;
-      titleStyle.fontSize = 16;
-      sheet.getRangeByName('A1').cellStyle = titleStyle;
-
-      final headers = ['ID', 'Username', 'Name', 'Email', 'Role', 'Staff ID'];
-      for (int i = 0; i < headers.length; i++) {
-        sheet.getRangeByIndex(3, i + 1).setText(headers[i]);
-      }
-
-      final headerStyle = workbook.styles.add('h');
-      headerStyle.bold = true;
-      headerStyle.backColor = '#E8EEF6';
-      headerStyle.borders.all.lineStyle = xlsio.LineStyle.thin;
-      sheet.getRangeByName('A3:F3').cellStyle = headerStyle;
-
-      int row = 4;
-      for (final u in _filteredUsers) {
-        sheet.getRangeByIndex(row, 1).setNumber(u.id.toDouble());
-        sheet.getRangeByIndex(row, 2).setText(u.username);
-        sheet.getRangeByIndex(row, 3).setText(u.name);
-        sheet.getRangeByIndex(row, 4).setText(u.email);
-        sheet.getRangeByIndex(row, 5).setText(u.role);
-        sheet.getRangeByIndex(row, 6).setText(u.staffId ?? '');
-        row++;
-      }
-
-      sheet.getRangeByName('A3:F${row - 1}').cellStyle.borders.all.lineStyle =
-          xlsio.LineStyle.thin;
-
-      for (int c = 1; c <= 6; c++) {
-        sheet.autoFitColumn(c);
-      }
-
-      final bytes = Uint8List.fromList(workbook.saveAsStream());
-      workbook.dispose();
-
-      await FileSaver.instance.saveFile(
-        name: 'users_${DateTime.now().toIso8601String().split("T").first}',
-        bytes: bytes,
-        fileExtension: 'xlsx',
-        mimeType: MimeType.microsoftExcel,
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Exported successfully.')));
-      }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
+        );
       }
     }
-
-    if (mounted) setState(() => _isExporting = false);
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-
+    
     return Scaffold(
       appBar: AppBar(
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        backgroundColor: cs.surface,
         leading: const BackButtonIos(),
         title: const Text('Manage Users'),
       ),
-
-      floatingActionButton: SpeedDial(
-        icon: Icons.add,
-        activeIcon: Icons.close,
-        foregroundColor: cs.onPrimaryContainer,
-        backgroundColor: cs.primaryContainer,
-        overlayColor: Colors.black,
-        overlayOpacity: 0.25,
-        spacing: 10,
-        spaceBetweenChildren: 12,
-        elevation: 6,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        children: [
-          SpeedDialChild(
-            child: const Icon(Icons.person_add_alt_1),
-            backgroundColor: cs.secondaryContainer,
-            foregroundColor: cs.onSecondaryContainer,
-            label: 'Add New User',
-            onTap: _navigateToAddUser,
-          ),
-          SpeedDialChild(
-            child: _isExporting
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.download),
-            backgroundColor: cs.tertiaryContainer,
-            foregroundColor: cs.onTertiaryContainer,
-            label: _isExporting ? 'Exporting...' : 'Export XLSX',
-            onTap: _isExporting ? null : _exportUsers,
-          ),
-        ],
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: cs.primary,
+        foregroundColor: cs.onPrimary,
+        shape: const CircleBorder(),
+        onPressed: _navigateToAddUser,
+        child: const Icon(Icons.person_add_alt_1),
       ),
-
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -341,15 +220,17 @@ class _UserListPageState extends State<UserListPage> {
   }
 
   Widget _buildBody() {
+    final cs = Theme.of(context).colorScheme;
+
     if (_isLoading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(_error!, textAlign: TextAlign.center),
+            Text(_error!, textAlign: TextAlign.center, style: TextStyle(color: cs.error)),
             const SizedBox(height: 16),
-            ElevatedButton(
+            FilledButton.tonal(
               onPressed: _refreshUsers,
               child: const Text('Retry'),
             ),
@@ -362,27 +243,38 @@ class _UserListPageState extends State<UserListPage> {
   }
 
   Widget _buildUserList() {
-    return ListView.builder(
+    final cs = Theme.of(context).colorScheme;
+
+    return ListView.separated(
       itemCount: _filteredUsers.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final user = _filteredUsers[index];
         return Card(
-          margin: const EdgeInsets.symmetric(vertical: 6.0),
+          elevation: 0,
+          color: cs.surfaceContainerLow,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.4)),
+          ),
           child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             leading: CircleAvatar(
-              child: Text(user.name.isNotEmpty ? user.name[0] : '?'),
+              backgroundColor: cs.primaryContainer,
+              foregroundColor: cs.onPrimaryContainer,
+              child: Text(user.name.isNotEmpty ? user.name[0].toUpperCase() : '?'),
             ),
             title: Text(
               user.name,
-              style: const TextStyle(fontWeight: FontWeight.bold),
+              style: TextStyle(fontWeight: FontWeight.bold, color: cs.onSurface),
             ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(user.email),
+                Text(user.email, style: TextStyle(color: cs.onSurfaceVariant)),
                 Text(
                   'Role: ${user.role}',
-                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                  style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
                 ),
               ],
             ),
@@ -390,14 +282,16 @@ class _UserListPageState extends State<UserListPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  color: Theme.of(context).colorScheme.error,
-                  onPressed: () => _showDeleteConfirmationDialog(user),
+                  icon: const Icon(Icons.lock_reset_outlined),
+                  color: cs.primary,
+                  tooltip: "Reset Password",
+                  onPressed: () => _showPasswordResetConfirmationDialog(user),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.refresh),
-                  color: Theme.of(context).colorScheme.error,
-                  onPressed: () => _showPasswordResetConfirmationDialog(user),
+                  icon: const Icon(Icons.delete_outline),
+                  color: cs.error,
+                  tooltip: "Delete User",
+                  onPressed: () => _showDeleteConfirmationDialog(user),
                 ),
               ],
             ),
@@ -408,17 +302,18 @@ class _UserListPageState extends State<UserListPage> {
   }
 
   Widget _buildEmptyState() {
+    final cs = Theme.of(context).colorScheme;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.people_outline, size: 80, color: Colors.grey[400]),
+          Icon(Icons.people_outline, size: 80, color: cs.outline),
           const SizedBox(height: 16),
           Text(
             _searchController.text.isEmpty
                 ? 'No Users Found'
                 : 'No users match your search',
-            style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+            style: TextStyle(fontSize: 18, color: cs.onSurfaceVariant),
           ),
         ],
       ),
@@ -436,11 +331,11 @@ class _SearchBar extends StatelessWidget {
     return TextField(
       controller: controller,
       decoration: InputDecoration(
-        labelText: 'Search Users',
-        hintText: 'Search by name, email, username...',
-        prefixIcon: const Icon(Icons.search),
+        hintText: 'Search users...',
+        hintStyle: TextStyle(color: cs.onSurfaceVariant),
+        prefixIcon: Icon(Icons.search, color: cs.onSurfaceVariant),
         filled: true,
-        fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.4),
+        fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.3),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12.0),
           borderSide: BorderSide.none,

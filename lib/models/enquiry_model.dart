@@ -34,6 +34,8 @@ class Enquiry {
   final String? referral;
   final String createdAt;
   final String updatedAt;
+  final String? nextFollowUp;
+
 
   Enquiry({
     required this.id,
@@ -46,6 +48,7 @@ class Enquiry {
     required this.currentStatusName,
     required this.sourceName,
     required this.firstName,
+    this.nextFollowUp,
     this.schoolName,
     this.middleName,
     this.lastName,
@@ -94,6 +97,7 @@ class Enquiry {
       phoneNumber: json['phone_number'],
       email: json['email'] as String?,
       address: json['address'] as String?,
+      nextFollowUp: json['next_follow_up'],
 
       // 2. FIXED: Added 'as int?' for type safety
       pincode: json['pincode'] as int?, 

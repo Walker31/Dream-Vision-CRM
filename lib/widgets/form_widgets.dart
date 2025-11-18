@@ -3,14 +3,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-// A collection of your reusable form widgets, now as StatelessWidgets
-
 class CustomTextField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
   final bool isRequired;
   final int maxLines;
   final TextInputType? keyboardType;
+  final String? validatorType;
 
   const CustomTextField(
     this.controller,
@@ -19,6 +18,7 @@ class CustomTextField extends StatelessWidget {
     this.isRequired = true,
     this.maxLines = 1,
     this.keyboardType,
+    this.validatorType,
   });
 
   @override
@@ -39,9 +39,29 @@ class CustomTextField extends StatelessWidget {
           ),
         ),
         validator: (value) {
+          // Required check
           if (isRequired && (value == null || value.isEmpty)) {
             return 'Please enter $label';
           }
+
+          if (value == null || value.isEmpty) return null;
+
+          final digits = value.replaceAll(RegExp(r'\D'), '');
+
+          // PHONE VALIDATION - 10 digits
+          if (validatorType == "phone") {
+            if (digits.length != 10) {
+              return 'Please enter a valid mobile number.';
+            }
+          }
+
+          // PINCODE VALIDATION - 6 digits
+          if (validatorType == "pincode") {
+            if (digits.length != 6) {
+              return 'Please enter a valid pincode.';
+            }
+          }
+
           return null;
         },
       ),
@@ -118,8 +138,10 @@ class CustomDropdownField extends StatelessWidget {
         ),
         initialValue: items.contains(value) ? value : null,
         items: items
-            .map((item) =>
-                DropdownMenuItem<String>(value: item, child: Text(item)))
+            .map(
+              (item) =>
+                  DropdownMenuItem<String>(value: item, child: Text(item)),
+            )
             .toList(),
         onChanged: onChanged,
       ),
@@ -159,13 +181,10 @@ class CustomApiDropdownField extends StatelessWidget {
           ),
         )
         .toList();
-    
+
     if (includeOther) {
       dropdownItems.add(
-        DropdownMenuItem<int>(
-          value: otherId,
-          child: const Text('Other...'),
-        ),
+        DropdownMenuItem<int>(value: otherId, child: const Text('Other...')),
       );
     }
 
@@ -181,11 +200,13 @@ class CustomApiDropdownField extends StatelessWidget {
             borderSide: BorderSide.none,
           ),
         ),
-        
+
         // FIX 1: Force the dropdown to fill its parent's width
-        isExpanded: true, 
-        
-        initialValue: dropdownItems.any((item) => item.value == value) ? value : null,
+        isExpanded: true,
+
+        initialValue: dropdownItems.any((item) => item.value == value)
+            ? value
+            : null,
         items: dropdownItems,
         onChanged: onChanged,
       ),

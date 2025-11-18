@@ -38,7 +38,7 @@ class User {
     required this.createdAt,
     required this.updatedAt,
   });
-
+  String get name => '$firstName $lastName'.trim();
   factory User.fromJson(Map<String, dynamic> json) {
     final userData = json['user'] as Map<String, dynamic>? ?? {};
 

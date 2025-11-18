@@ -15,8 +15,6 @@ class Settings extends StatefulWidget {
 }
 
 class _SettingsState extends State<Settings> {
-  bool _areNotificationsOn = true;
-
   Future<void> _showLogoutConfirmationDialog() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
@@ -28,9 +26,7 @@ class _SettingsState extends State<Settings> {
           title: const Text('Confirm Logout'),
           content: const SingleChildScrollView(
             child: ListBody(
-              children: <Widget>[
-                Text('Are you sure you want to log out?'),
-              ],
+              children: <Widget>[Text('Are you sure you want to log out?')],
             ),
           ),
           actions: <Widget>[
@@ -59,12 +55,18 @@ class _SettingsState extends State<Settings> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: IconButton(onPressed: () {context.pop();}, icon: Icon(Icons.arrow_back_ios_new_rounded)),
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        leading: IconButton(
+          onPressed: () {
+            context.pop();
+          },
+          icon: Icon(Icons.arrow_back_ios_new_rounded),
+        ),
         title: const Text(
           'Settings',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
         elevation: 1.0,
         centerTitle: true,
@@ -99,15 +101,7 @@ class _SettingsState extends State<Settings> {
                   ),
                   const SizedBox(height: 24),
                   _buildSectionHeader('General'),
-                  _buildSettingsCard(
-                    children: [
-                      _buildDarkModeToggle(),
-                      const Divider(height: 1),
-                      _buildNotificationToggle(),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  _buildSectionHeader('More'),
+                  _buildSettingsCard(children: [_buildDarkModeToggle()]),
                 ],
               ),
             ),
@@ -141,9 +135,7 @@ class _SettingsState extends State<Settings> {
         borderRadius: BorderRadius.circular(12.0),
         side: BorderSide(color: Theme.of(context).dividerColor, width: 1),
       ),
-      child: Column(
-        children: children,
-      ),
+      child: Column(children: children),
     );
   }
 
@@ -155,48 +147,73 @@ class _SettingsState extends State<Settings> {
     return ListTile(
       leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
       title: Text(title),
-      trailing:
-          const Icon(CupertinoIcons.chevron_right, size: 16, color: Colors.grey),
+      trailing: const Icon(
+        CupertinoIcons.chevron_right,
+        size: 16,
+        color: Colors.grey,
+      ),
       onTap: onTap,
     );
   }
 
   Widget _buildDarkModeToggle() {
     final themeProvider = Provider.of<ThemeProvider>(context);
-    return SwitchListTile(
-      title: const Text('Dark Mode'),
-      subtitle: Text(
-        'Enable dark theme across the app',
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-      secondary: Icon(
-        themeProvider.isDarkMode ? CupertinoIcons.moon_fill : CupertinoIcons.sun_max_fill,
-        color: Theme.of(context).colorScheme.primary,
-      ),
-      value: themeProvider.isDarkMode,
-      onChanged: (value) {
-        Provider.of<ThemeProvider>(context, listen: false).toggleTheme(value);
-      },
-    );
-  }
+    final currentMode = themeProvider.themeMode;
 
-  Widget _buildNotificationToggle() {
-    return SwitchListTile(
-      title: const Text('Notifications'),
-      subtitle: Text(
-        'Receive push notifications',
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-      secondary: Icon(
-        _areNotificationsOn ? CupertinoIcons.bell_fill : CupertinoIcons.bell_slash_fill,
-        color: Theme.of(context).colorScheme.primary,
-      ),
-      value: _areNotificationsOn,
-      onChanged: (value) {
-        setState(() {
-          _areNotificationsOn = value;
-        });
-      },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            12,
+            16,
+            12,
+          ), // Added some bottom padding
+          child: Text(
+            "Appearance",
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+        // Wrap with Padding to give it space inside the card
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: SegmentedButton<ThemeMode>(
+            // The segments replace your RadioListTiles
+            segments: const <ButtonSegment<ThemeMode>>[
+              ButtonSegment<ThemeMode>(
+                value: ThemeMode.system,
+                label: Text('System'),
+                icon: Icon(Icons.settings_suggest_outlined),
+              ),
+              ButtonSegment<ThemeMode>(
+                value: ThemeMode.light,
+                label: Text('Light'),
+                icon: Icon(Icons.light_mode_outlined),
+              ),
+              ButtonSegment<ThemeMode>(
+                value: ThemeMode.dark,
+                label: Text('Dark'),
+                icon: Icon(Icons.dark_mode_outlined),
+              ),
+            ],
+            // 'selected' takes a Set, not a single value
+            selected: <ThemeMode>{currentMode},
+            // 'onSelectionChanged' returns a Set
+            onSelectionChanged: (Set<ThemeMode> newSelection) {
+              themeProvider.setThemeMode(newSelection.first);
+            },
+            // Ensures only one item can be selected
+            multiSelectionEnabled: false,
+            // Ensures one item is always selected
+            emptySelectionAllowed: false,
+          ),
+        ),
+      ],
     );
   }
 

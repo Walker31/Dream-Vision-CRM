@@ -1,7 +1,7 @@
 import 'package:dreamvision/services/auth_service.dart';
 import 'package:flutter/material.dart';
 
-import '../../widgets/back_button.dart'; // Ensure this import path is correct
+import '../../widgets/back_button.dart';
 
 class ChangePasswordPage extends StatefulWidget {
   const ChangePasswordPage({super.key});
@@ -25,7 +25,6 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
   bool _isLoading = false;
   String? _errorMessage;
 
-  // Added focus nodes for better keyboard navigation and input management
   final FocusNode _oldPasswordFocus = FocusNode();
   final FocusNode _newPassword1Focus = FocusNode();
   final FocusNode _newPassword2Focus = FocusNode();
@@ -42,17 +41,11 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
   }
 
   Future<void> _submitForm() async {
-    // Dismiss the keyboard
     FocusScope.of(context).unfocus();
-
-    setState(() {
-      _errorMessage = null; // Clear previous errors
-    });
+    setState(() => _errorMessage = null);
 
     if (_formKey.currentState!.validate()) {
-      setState(() {
-        _isLoading = true;
-      });
+      setState(() => _isLoading = true);
 
       try {
         await _authService.changePassword(
@@ -61,196 +54,169 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
           _newPassword2Controller.text,
         );
 
-        // If successful
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Password changed successfully!'),
-              backgroundColor: Colors.green,
+            SnackBar(
+              content: const Text('Password changed successfully!'),
+              backgroundColor: Theme.of(context).colorScheme.tertiary,
             ),
           );
           Navigator.of(context).pop();
         }
       } catch (e) {
-        // If an error occurs (e.g., wrong old password)
         setState(() {
           _errorMessage = e.toString().replaceFirst('Exception: ', '');
         });
       } finally {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-        }
+        if (mounted) setState(() => _isLoading = false);
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Get primary color from theme for consistent styling
-    final primaryColor = Theme.of(context).primaryColor;
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final textTheme = theme.textTheme;
 
     return Scaffold(
       appBar: AppBar(
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        backgroundColor: cs.surface,
         leading: const BackButtonIos(),
         title: const Text('Change Password'),
-        centerTitle: true, // Center the title for a cleaner look
-        elevation: 0, // Remove shadow for a flatter design
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor, // Match scaffold background
+        centerTitle: true,
+        elevation: 0,
       ),
+
       body: GestureDetector(
-        onTap: () {
-          // Dismiss keyboard when tapping outside text fields
-          FocusScope.of(context).unfocus();
-        },
+        onTap: () => FocusScope.of(context).unfocus(),
+
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0), // Increased padding
+          padding: const EdgeInsets.all(24),
           child: Form(
             key: _formKey,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch, // Stretch children horizontally
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Informative Header Card
-                Card(
-                  elevation: 4, // Slightly more elevation for prominence
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16), // More rounded corners
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(24.0), // Increased padding inside card
+                // Information Card
+                Material(
+                  elevation: 3,
+                  surfaceTintColor: cs.primary,
+                  shadowColor: Colors.black.withValues(alpha:0.25),
+                  borderRadius: BorderRadius.circular(16),
+
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: cs.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    padding: const EdgeInsets.all(24),
+
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           'Secure Your Account',
-                          style: textTheme.headlineSmall?.copyWith(
+                          style: textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.bold,
-                            color: primaryColor, // Use primary color for main title
+                            color: cs.primary,
                           ),
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'For your security, please update your password. Your new password must be strong and at least 8 characters long.',
+                          'Your new password must be at least 8 characters long.',
                           style: textTheme.bodyMedium?.copyWith(
-                            color: Colors.grey[700],
+                            color: cs.onSurfaceVariant,
                           ),
                         ),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 32), // Increased spacing
 
-                // Password Input Fields
-                _buildPasswordFormField(
+                const SizedBox(height: 32),
+
+                _buildPasswordField(
                   controller: _oldPasswordController,
                   focusNode: _oldPasswordFocus,
-                  labelText: 'Old Password',
-                  obscureText: _obscureOld,
-                  toggleObscure: () {
-                    setState(() {
-                      _obscureOld = !_obscureOld;
-                    });
-                  },
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter your old password';
-                    }
-                    return null;
-                  },
-                  textInputAction: TextInputAction.next, // Go to next field on submit
-                  onFieldSubmitted: (_) => FocusScope.of(context).requestFocus(_newPassword1Focus),
+                  label: 'Old Password',
+                  obscure: _obscureOld,
+                  toggle: () => setState(() => _obscureOld = !_obscureOld),
+                  onSubmit: (_) =>
+                      FocusScope.of(context).requestFocus(_newPassword1Focus),
+                  validator: (v) =>
+                      v == null || v.isEmpty ? 'Please enter your old password' : null,
                 ),
                 const SizedBox(height: 24),
-                _buildPasswordFormField(
+
+                _buildPasswordField(
                   controller: _newPassword1Controller,
                   focusNode: _newPassword1Focus,
-                  labelText: 'New Password',
-                  helperText: 'Minimum 8 characters',
-                  obscureText: _obscureNew1,
-                  toggleObscure: () {
-                    setState(() {
-                      _obscureNew1 = !_obscureNew1;
-                    });
-                  },
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter a new password';
-                    }
-                    if (value.length < 8) {
-                      return 'Password must be at least 8 characters long';
-                    }
+                  label: 'New Password',
+                  helper: 'Minimum 8 characters',
+                  obscure: _obscureNew1,
+                  toggle: () => setState(() => _obscureNew1 = !_obscureNew1),
+                  onSubmit: (_) =>
+                      FocusScope.of(context).requestFocus(_newPassword2Focus),
+                  validator: (v) {
+                    if (v == null || v.isEmpty) return 'Enter a new password';
+                    if (v.length < 8) return 'Password must be 8+ characters';
                     return null;
                   },
-                  textInputAction: TextInputAction.next,
-                  onFieldSubmitted: (_) => FocusScope.of(context).requestFocus(_newPassword2Focus),
                 ),
                 const SizedBox(height: 24),
-                _buildPasswordFormField(
+
+                _buildPasswordField(
                   controller: _newPassword2Controller,
                   focusNode: _newPassword2Focus,
-                  labelText: 'Confirm New Password',
-                  obscureText: _obscureNew2,
-                  toggleObscure: () {
-                    setState(() {
-                      _obscureNew2 = !_obscureNew2;
-                    });
-                  },
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please confirm your new password';
-                    }
-                    if (value != _newPassword1Controller.text) {
-                      return 'The passwords do not match';
+                  label: 'Confirm New Password',
+                  obscure: _obscureNew2,
+                  toggle: () => setState(() => _obscureNew2 = !_obscureNew2),
+                  onSubmit: (_) => _submitForm(),
+                  validator: (v) {
+                    if (v == null || v.isEmpty) return 'Confirm your password';
+                    if (v != _newPassword1Controller.text) {
+                      return 'Passwords do not match';
                     }
                     return null;
                   },
-                  textInputAction: TextInputAction.done, // Done on submit for last field
-                  onFieldSubmitted: (_) => _submitForm(), // Submit form when done on last field
                 ),
 
                 const SizedBox(height: 32),
 
-                // Error Message Display
                 if (_errorMessage != null)
-                  AnimatedOpacity(
-                    opacity: _errorMessage != null ? 1.0 : 0.0,
-                    duration: const Duration(milliseconds: 300),
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 16.0),
-                      child: Text(
-                        _errorMessage!,
-                        style: textTheme.bodyLarge?.copyWith(
-                          color: Colors.red[700],
-                          fontWeight: FontWeight.w500,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
+                  Text(
+                    _errorMessage!,
+                    textAlign: TextAlign.center,
+                    style: textTheme.bodyLarge?.copyWith(
+                      color: cs.error,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
 
-                // Submit Button
+                const SizedBox(height: 16),
+
                 ElevatedButton(
                   onPressed: _isLoading ? null : _submitForm,
                   style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16), // Larger button
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    backgroundColor: cs.primary,
+                    foregroundColor: cs.onPrimary,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12), // Consistent rounded corners
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    backgroundColor: primaryColor, // Use theme primary color
-                    foregroundColor: Colors.white,
                     textStyle: textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   child: _isLoading
                       ? const SizedBox(
-                          height: 24, // Consistent height for circular progress
-                          width: 24,
+                          height: 22,
+                          width: 22,
                           child: CircularProgressIndicator(
-                            strokeWidth: 3,
+                            strokeWidth: 2.5,
                             valueColor: AlwaysStoppedAnimation(Colors.white),
                           ),
                         )
@@ -264,57 +230,66 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
     );
   }
 
-  // Refactored password form field into a reusable widget
-  Widget _buildPasswordFormField({
+  // --------------------------------------------------
+  // Password Field (Theme-Aware)
+  // --------------------------------------------------
+
+  Widget _buildPasswordField({
     required TextEditingController controller,
     required FocusNode focusNode,
-    required String labelText,
-    String? helperText,
-    required bool obscureText,
-    required VoidCallback toggleObscure,
-    required String? Function(String?) validator,
-    required TextInputAction textInputAction,
-    required ValueChanged<String> onFieldSubmitted,
+    required String label,
+    String? helper,
+    required bool obscure,
+    required VoidCallback toggle,
+    required Function(String) onSubmit,
+    required FormFieldValidator<String> validator,
   }) {
+    final cs = Theme.of(context).colorScheme;
+
     return TextFormField(
       controller: controller,
       focusNode: focusNode,
-      obscureText: obscureText,
+      obscureText: obscure,
+      textInputAction: TextInputAction.next,
+      validator: validator,
+      onFieldSubmitted: onSubmit,
+
       decoration: InputDecoration(
-        labelText: labelText,
-        helperText: helperText,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8), // Slightly rounded borders
-          borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 1.5),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Colors.grey[400]!, width: 1),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Colors.red, width: 1.5),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Colors.red, width: 2),
-        ),
+        labelText: label,
+        helperText: helper,
+        helperStyle: TextStyle(color: cs.onSurfaceVariant),
+
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+
         suffixIcon: IconButton(
           icon: Icon(
-            obscureText ? Icons.visibility_off : Icons.visibility,
-            color: Colors.grey[600],
+            obscure ? Icons.visibility_off : Icons.visibility,
+            color: cs.onSurfaceVariant,
           ),
-          onPressed: toggleObscure,
+          onPressed: toggle,
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14), // Adjusted padding
+
+        filled: true,
+        fillColor: cs.surfaceContainerHighest,
+
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: cs.outlineVariant),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: cs.primary, width: 2),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: cs.error, width: 1.5),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: cs.error, width: 2),
+        ),
       ),
-      validator: validator,
-      textInputAction: textInputAction,
-      onFieldSubmitted: onFieldSubmitted,
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:dreamvision/services/admin_user.dart';
 import 'package:dreamvision/widgets/back_button.dart';
+import 'package:dreamvision/widgets/ui_helpers.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../widgets/password_display_dialog.dart';
@@ -41,55 +42,64 @@ class _AddUserPageState extends State<AddUserPage> {
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate() || _isSubmitting) return;
 
+    // 1. Start Loading
     setState(() => _isSubmitting = true);
 
     final userData = {
-      'first_name': _firstNameController.text,
-      'last_name': _lastNameController.text,
-      'username': _usernameController.text,
-      'email': _emailController.text,
-      'staff_id': _staffIdController.text,
-      'phone_number': _phoneController.text,
-      'address': _addressController.text,
+      'first_name': _firstNameController.text.trim(),
+      'last_name': _lastNameController.text.trim(),
+      'username': _usernameController.text.trim(),
+      'email': _emailController.text.trim(),
+      'staff_id': _staffIdController.text.trim(),
+      'phone_number': _phoneController.text.trim(),
+      'address': _addressController.text.trim(),
       'role': _selectedRole!,
     };
 
-    try {
-      final response = await _adminUserService.addUser(userData);
-      final initialPassword = response['initial_password'] ?? 'Not provided';
+    // We need to capture the response here to use it in onSuccess
+    Map<String, dynamic>? response;
 
-      if (mounted) {
-        await showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => PasswordDisplayDialog(
-            title: "User Created Successfully",
-            username: _usernameController.text,
-            password: initialPassword,
-          ),
-        );
-        if (mounted) context.pop(true);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to add user: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
-    }
+    // 2. Use the Safe API Call wrapper
+    await context.safeApiCall(
+      () async {
+        // The risky operation
+        response = await _adminUserService.addUser(userData);
+      },
+      onSuccess: () async {
+        // This only runs if the API call didn't throw an error
+        if (response != null && mounted) {
+          final initialPassword =
+              response!['initial_password'] ?? 'Not provided';
+
+          await showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => PasswordDisplayDialog(
+              title: "User Created Successfully",
+              username: _usernameController.text,
+              password: initialPassword,
+            ),
+          );
+
+          if (mounted) context.pop(true); // Return true to refresh list
+        }
+      },
+    );
+
+    // 3. Stop Loading (runs regardless of success or failure)
+    if (mounted) setState(() => _isSubmitting = false);
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
 
     return Scaffold(
       appBar: AppBar(
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        backgroundColor: cs.surface,
         leading: const BackButtonIos(),
         title: const Text(
           'Create User Profile',
@@ -101,12 +111,12 @@ class _AddUserPageState extends State<AddUserPage> {
             child: TextButton(
               onPressed: _isSubmitting ? null : _submitForm,
               child: _isSubmitting
-                  ? const SizedBox(
+                  ? SizedBox(
                       height: 18,
                       width: 18,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: Colors.white,
+                        color: cs.primary,
                       ),
                     )
                   : const Text('Save'),
@@ -119,10 +129,11 @@ class _AddUserPageState extends State<AddUserPage> {
         child: Form(
           key: _formKey,
           child: Card(
-            elevation: 2,
-            shadowColor: Colors.black12,
+            elevation: 0,
+            color: cs.surfaceContainerLow, // Better for Dark Mode
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
+              side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.4)),
             ),
             child: Padding(
               padding: const EdgeInsets.all(20),
@@ -134,8 +145,14 @@ class _AddUserPageState extends State<AddUserPage> {
                       borderSide: BorderSide.none,
                     ),
                     filled: true,
-                    fillColor: Colors.grey.withValues(alpha: 0.1),
-                    labelStyle: TextStyle(fontSize: 14),
+                    // Standard M3 input fill
+                    fillColor: cs.surfaceContainerHighest.withValues(
+                      alpha: 0.3,
+                    ),
+                    labelStyle: TextStyle(
+                      fontSize: 14,
+                      color: cs.onSurfaceVariant,
+                    ),
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16,
                       vertical: 14,
@@ -159,7 +176,6 @@ class _AddUserPageState extends State<AddUserPage> {
                       decoration: const InputDecoration(labelText: 'Last Name'),
                       validator: (v) => v!.isEmpty ? 'Enter last name' : null,
                     ),
-
                     const SizedBox(height: 26),
                     const _SectionHeader(title: 'Account Information'),
                     TextFormField(
@@ -184,7 +200,6 @@ class _AddUserPageState extends State<AddUserPage> {
                             : 'Enter a valid email';
                       },
                     ),
-
                     const SizedBox(height: 26),
                     const _SectionHeader(title: 'Organizational Info'),
                     TextFormField(
@@ -224,7 +239,6 @@ class _AddUserPageState extends State<AddUserPage> {
                       validator: (value) =>
                           value == null ? 'Select a role' : null,
                     ),
-
                     const SizedBox(height: 26),
                     const _SectionHeader(title: 'Contact Details'),
                     TextFormField(
@@ -237,24 +251,21 @@ class _AddUserPageState extends State<AddUserPage> {
                       validator: (v) =>
                           v!.isEmpty ? 'Enter full address' : null,
                     ),
-
                     const SizedBox(height: 32),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
+                    FilledButton(
+                      style: FilledButton.styleFrom(
                         minimumSize: const Size(double.infinity, 50),
-                        backgroundColor: theme.colorScheme.primary,
-                        foregroundColor: theme.colorScheme.onPrimary,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                       onPressed: _isSubmitting ? null : _submitForm,
                       child: _isSubmitting
-                          ? const SizedBox(
+                          ? SizedBox(
                               height: 24,
                               width: 24,
                               child: CircularProgressIndicator(
-                                color: Colors.white,
+                                color: cs.onPrimary,
                                 strokeWidth: 3,
                               ),
                             )

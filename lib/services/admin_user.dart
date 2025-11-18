@@ -22,7 +22,7 @@ class AdminUserService {
     _dio = Dio(BaseOptions(
       baseUrl: _baseUrl,
       headers: {
-        'Content-Type': 'application/json; charset=UTF-Standard8',
+        'Content-Type': 'application/json; charset=UTF-8',
       },
     ));
 
@@ -48,68 +48,68 @@ class AdminUserService {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // UPDATED ERROR HANDLER
+  // ---------------------------------------------------------------------------
   String _handleDioError(DioException e) {
-    logger.e(
-      'API Error [${e.response?.statusCode ?? 'N/A'}]: ${e.message}',
-      error: e.error,
-    );
+    // Log for developer debugging
+    logger.e('API Error: ${e.message}', error: e.error, stackTrace: e.stackTrace);
 
+    // 1. Handle Network/Connection Issues
     if (e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.sendTimeout ||
         e.type == DioExceptionType.receiveTimeout) {
-      return 'Connection timed out. Please check your network.';
+      return 'Connection timeout. Please check your internet.';
+    }
+    if (e.error is SocketException || e.type == DioExceptionType.unknown) {
+      return 'No internet connection.';
     }
 
-    if (e.error is SocketException || e.type == DioExceptionType.cancel) {
-      return 'Authentication token not found. Please log in.';
-    }
-    
-    if (e.type == DioExceptionType.unknown) {
-      return 'Connection error. Please check your network.';
-    }
+    // 2. Handle Server Responses
+    if (e.response != null) {
+      final int statusCode = e.response!.statusCode ?? 0;
+      final dynamic data = e.response!.data;
 
-    final responseBody = e.response?.data;
-
-    if (responseBody == null || responseBody == "") {
-      return 'API Error [${e.response?.statusCode}]: Received empty response from server.';
-    }
-
-    try {
-      if (responseBody is Map) {
-        String errorMessage = 'An unknown error occurred.';
-        if (responseBody['detail'] != null) {
-          errorMessage = responseBody['detail'].toString();
-        } else if (responseBody['error'] != null) {
-          errorMessage = responseBody['error'].toString();
-        } else if (responseBody.containsKey('details') &&
-            responseBody['details'] is List) {
-          final details = (responseBody['details'] as List).join('\n');
-          errorMessage = 'Validation failed.\n$details';
-        } else if (e.response?.statusCode == 400 &&
-            responseBody.entries.isNotEmpty) {
-          errorMessage = responseBody.entries.map((e) {
-            String keyFormatted = e.key.replaceAll('_', ' ');
-            String capitalizedKey = keyFormatted.capitalize();
-            String valueFormatted =
-                e.value is List ? e.value.join(', ') : e.value.toString();
-            return '$capitalizedKey: $valueFormatted';
-          }).join('\n');
-        } else {
-          errorMessage = responseBody.entries
-              .map((e) =>
-                  '${e.key}: ${e.value is List ? e.value.join(', ') : e.value}')
-              .join('\n');
-        }
-        return errorMessage;
-      } else if (responseBody is String) {
-        return responseBody;
+      // Server Error (500+): Hide raw code, show generic message
+      if (statusCode >= 500) {
+        return 'Server error ($statusCode). Please try again later.';
       }
-      return 'API Error [${e.response?.statusCode}]: $responseBody';
-    } catch (parseError) {
-      logger.e('Error parsing error response body: $parseError');
-      return 'Failed to process server response. Invalid format.';
+
+      // Check for HTML (The fix for your IntegrityError screen)
+      if (data is String) {
+         if (data.toLowerCase().contains('<!doctype html>') || 
+             data.toLowerCase().contains('<html')) {
+           return 'Server returned an invalid response.';
+         }
+         return data;
+      }
+
+      // Client Error (400-499): Extract specific validation message
+      if (data is Map) {
+        // Common Django/DRF keys
+        if (data['detail'] != null) return data['detail'].toString();
+        if (data['message'] != null) return data['message'].toString();
+        if (data['error'] != null) return data['error'].toString();
+        
+        // Field-specific errors (e.g., { "username": ["Already exists"] })
+        if (data.isNotEmpty) {
+          final firstKey = data.keys.first;
+          final firstValue = data[firstKey];
+          
+          // Format the key (e.g., phone_number -> Phone number)
+          final formattedKey = firstKey.toString().replaceAll('_', ' ').capitalize();
+
+          if (firstValue is List) {
+            return "$formattedKey: ${firstValue.first}";
+          }
+          return "$formattedKey: $firstValue";
+        }
+      }
     }
+
+    return 'Something went wrong. Please try again.';
   }
+  // ---------------------------------------------------------------------------
 
   Future<Map<String, dynamic>> addUser(Map<String, dynamic> data) async {
     logger.d('Adding User: $data');
@@ -118,7 +118,7 @@ class AdminUserService {
       logger.d('API Response [${response.statusCode}]: ${response.data}');
       return response.data ?? {};
     } catch (e) {
-      logger.e('Error adding user', error: e);
+      // Using the new handler implies this will return a clean string inside the Exception
       throw Exception(e is DioException ? _handleDioError(e) : e.toString());
     }
   }
@@ -139,7 +139,6 @@ class AdminUserService {
         throw Exception('Received unexpected data format for user list.');
       }
     } catch (e) {
-      logger.e('Error listing users', error: e);
       throw Exception(e is DioException ? _handleDioError(e) : e.toString());
     }
   }
@@ -158,7 +157,6 @@ class AdminUserService {
       logger.d('API Response [${response.statusCode}]: ${response.data}');
       return response.data ?? {};
     } catch (e) {
-      logger.e('Error deleting user $userId', error: e);
       throw Exception(e is DioException ? _handleDioError(e) : e.toString());
     }
   }
@@ -173,7 +171,6 @@ class AdminUserService {
       logger.d('API Response [${response.statusCode}]: ${response.data}');
       return response.data ?? {};
     } catch (e) {
-      logger.e('Error resetting password for user $userId', error: e);
       throw Exception(e is DioException ? _handleDioError(e) : e.toString());
     }
   }

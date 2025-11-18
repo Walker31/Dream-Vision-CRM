@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:dreamvision/config/constants.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -15,6 +16,9 @@ class AuthService {
       headers: {
         'Content-Type': 'application/json',
       },
+      // Add timeouts to prevent infinite hanging
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 10),
     ));
 
     _dio.interceptors.add(
@@ -32,6 +36,7 @@ class AuthService {
         },
         onError: (DioException e, handler) async {
           if (e.response?.statusCode == 401) {
+            // If the failed request was ALREADY a refresh attempt, fail immediately
             if (e.requestOptions.path.contains('/token/refresh')) {
               logger.e('Refresh token failed, logging out.');
               await logout();
@@ -46,7 +51,8 @@ class AuthService {
                 logger.i('Retrying request with new token...');
                 final opts = e.requestOptions;
                 opts.headers['Authorization'] = 'Bearer $newAccessToken';
-                
+
+                // Retry the request
                 final response = await _dio.fetch(opts);
                 return handler.resolve(response);
               }
@@ -61,6 +67,69 @@ class AuthService {
       ),
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // ROBUST ERROR HANDLER
+  // ---------------------------------------------------------------------------
+  String _handleDioError(DioException e, [String defaultError = 'An unknown error occurred.']) {
+    // 1. Network/Connection Errors
+    if (e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.sendTimeout ||
+        e.type == DioExceptionType.receiveTimeout) {
+      return 'Connection timed out. Please check your network.';
+    }
+    if (e.error is SocketException || e.type == DioExceptionType.unknown) {
+      return 'No internet connection. Please check your network.';
+    }
+
+    // 2. Server Response Errors
+    if (e.response != null) {
+      final int statusCode = e.response!.statusCode ?? 0;
+      final dynamic data = e.response!.data;
+
+      // A. Server Error (500+): Hide details, show generic message
+      if (statusCode >= 500) {
+        return 'Server error ($statusCode). Please try again later.';
+      }
+
+      // B. HTML Response Check (Fixes the IntegrityError HTML screen)
+      if (data is String) {
+        if (data.toLowerCase().contains('<!doctype html>') ||
+            data.toLowerCase().contains('<html')) {
+          return 'Server returned an invalid response.';
+        }
+        return data; // Return plain string if it's not HTML
+      }
+
+      // C. Client Error (400-499): Extract validation messages
+      if (data is Map) {
+        // Common Django/DRF keys
+        if (data['detail'] != null) return data['detail'].toString();
+        if (data['message'] != null) return data['message'].toString();
+        if (data['error'] != null) return data['error'].toString();
+        if (data['non_field_errors'] != null) {
+           return (data['non_field_errors'] as List).join('\n');
+        }
+
+        // Field-specific errors (e.g., { "username": ["Already exists"] })
+        if (data.isNotEmpty) {
+          final firstKey = data.keys.first;
+          final firstValue = data[firstKey];
+          
+          // Format the key (e.g., phone_number -> Phone number)
+          final formattedKey = firstKey.toString().replaceAll('_', ' ').capitalize();
+
+          if (firstValue is List) {
+            return "$formattedKey: ${firstValue.first}";
+          }
+          return "$formattedKey: $firstValue";
+        }
+      }
+    }
+
+    return defaultError;
+  }
+  // ---------------------------------------------------------------------------
 
   Future<void> _storeTokens(Map<String, dynamic> tokens) async {
     await _storage.write(key: 'access_token', value: tokens['access']);
@@ -86,39 +155,37 @@ class AuthService {
         },
       );
 
-      final responseBody = response.data;
+      // Safety check: Ensure data is actually a Map
+      if (response.data is! Map<String, dynamic>) {
+         throw Exception("Invalid server response format.");
+      }
+
+      final responseBody = response.data as Map<String, dynamic>;
 
       if (response.statusCode == 200) {
         logger.d(responseBody);
         await _storeTokens(responseBody);
         return responseBody;
       } else {
-        logger.e(responseBody['detail']);
-        throw Exception(responseBody['detail'] ?? 'Failed to login.');
+        throw Exception('Failed to login.');
       }
     } catch (e) {
       String errorMessage = (e is DioException)
           ? _handleDioError(e, 'Failed to login.')
-          : 'An unknown error occurred.';
+          : e.toString();
       logger.e(errorMessage);
       throw Exception(errorMessage);
     }
   }
-
   Future<Map<String, dynamic>> getUserProfile() async {
-    String? token = await getAccessToken();
-    if (token == null) {
-      throw Exception('Not authenticated. Please login.');
-    }
-
     try {
+      // Token is added by Interceptor
       final response = await _dio.get('/users/profile/');
-      
       return response.data;
     } catch (e) {
       String errorMessage = (e is DioException)
           ? _handleDioError(e, 'Failed to load user profile.')
-          : 'An unknown error occurred.';
+          : e.toString();
       logger.e(errorMessage);
       throw Exception(errorMessage);
     }
@@ -132,7 +199,14 @@ class AuthService {
     }
 
     try {
-      final response = await _dio.post(
+      // We create a new dio instance here to avoid infinite loops 
+      // or interceptor conflicts during refresh
+      final refreshDio = Dio(BaseOptions(
+        baseUrl: _baseUrl,
+        headers: {'Content-Type': 'application/json'},
+      ));
+
+      final response = await refreshDio.post(
         '/users/token/refresh/',
         data: {'refresh': refreshToken},
       );
@@ -147,11 +221,9 @@ class AuthService {
       }
     } catch (e) {
       await logout();
-      String errorMessage = (e is DioException)
-          ? _handleDioError(e, 'Session expired. Please login again.')
-          : 'Session expired. Please login again.';
-      logger.e(errorMessage);
-      throw Exception(errorMessage);
+      // We generally don't show UI for refresh failure, just log out
+      logger.e('Refresh failed: $e');
+      return null;
     }
   }
 
@@ -179,53 +251,14 @@ class AuthService {
     } catch (e) {
       String errorMessage = (e is DioException)
           ? _handleDioError(e, 'Failed to sign up.')
-          : 'An unknown error occurred.';
+          : e.toString();
       logger.e(errorMessage);
       throw Exception(errorMessage);
     }
   }
 
-  String _formatErrors(Map<String, dynamic> errors) {
-    var buffer = StringBuffer();
-    errors.forEach((key, value) {
-      if (value is List) {
-        buffer.writeln(
-            '${key.replaceAll('_', ' ').capitalize()}: ${value.join(', ')}');
-      }
-    });
-    return buffer.toString().trim().isEmpty
-        ? 'An unknown error occurred.'
-        : buffer.toString();
-  }
-
-  String _handleDioError(DioException e, [String defaultError = 'An unknown error occurred.']) {
-    if (e.response?.data is Map) {
-      final data = e.response!.data as Map<String, dynamic>;
-      
-      if (data.values.isNotEmpty && data.values.first is List) {
-        return _formatErrors(data);
-      }
-      
-      return data['detail'] ?? defaultError;
-    }
-    if (e.type == DioExceptionType.connectionTimeout || 
-        e.type == DioExceptionType.sendTimeout ||
-        e.type == DioExceptionType.receiveTimeout) {
-      return 'Connection timed out. Please check your network.';
-    }
-    if (e.type == DioExceptionType.unknown) {
-      return 'Connection error. Please check your network.';
-    }
-    return e.message ?? defaultError;
-  }
-
   Future<void> changePassword(
       String oldPassword, String newPassword1, String newPassword2) async {
-    final token = await getAccessToken();
-    if (token == null) {
-      throw Exception('Not authenticated. Please log in again.');
-    }
-
     try {
       await _dio.put(
         '/users/profile/change-password/',
@@ -238,7 +271,7 @@ class AuthService {
     } catch (e) {
       String errorMessage = (e is DioException)
           ? _handleDioError(e, 'Failed to change password.')
-          : 'An unknown error occurred.';
+          : e.toString();
       logger.e(errorMessage);
       throw Exception(errorMessage);
     }
