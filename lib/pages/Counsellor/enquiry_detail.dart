@@ -25,6 +25,7 @@ class EnquiryDetailPage extends StatefulWidget {
 class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
   final EnquiryService _enquiryService = EnquiryService();
   late Future<Enquiry> _enquiryFuture;
+  Logger logger  = Logger();
   final Logger _logger = Logger();
   final _fabKey = GlobalKey<ExpandableFabState>();
 
@@ -37,7 +38,9 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
   Future<Enquiry> _fetchEnquiryData() async {
     try {
       final jsonData = await _enquiryService.getEnquiryById(widget.enquiryId);
+      logger.d (jsonData);
       return Enquiry.fromJson(jsonData);
+      
     } catch (e) {
       _logger.e('Failed to fetch enquiry: $e');
       if (mounted) {
@@ -171,7 +174,7 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
     );
 
     try {
-      await _enquiryService.deleteEnquiry(id);
+      await _enquiryService.softDeleteEnquiry(id);
 
       if (mounted) Navigator.pop(context); // close loader
       if (mounted) Navigator.pop(context, true); // go back
@@ -381,6 +384,8 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
                 'Source': enquiry.sourceName,
                 'Assigned Counsellor': enquiry.assignedToCounsellorDetails,
                 'Assigned Telecaller': enquiry.assignedToTelecallerDetails,
+                'Created By': enquiry.createdByDetails,
+                'Updated By': enquiry.updatedByDetails,   
                 'Registered On': enquiry.createdAt.split('T').first,
               },
             ),

@@ -1,60 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:logger/logger.dart';
+import 'package:provider/provider.dart';
+import '../../models/follow_up_model.dart';
 import '../../services/enquiry_service.dart';
 import '../../widgets/back_button.dart';
 import '../../models/enquiry_model.dart';
 import '../Telecaller/follow_up_sheet.dart';
-
-// ------------------------------------------------------
-// Model Classes
-// ------------------------------------------------------
-
-class FollowUpUser {
-  final String fullName;
-  FollowUpUser({required this.fullName});
-
-  factory FollowUpUser.fromJson(Map<String, dynamic> json) {
-    return FollowUpUser(fullName: json['full_name'] ?? 'Unknown User');
-  }
-}
-
-class FollowUp {
-  final int id;
-  final String remarks;
-  final String? statusBeforeFollowUpName;
-  final String? statusAfterFollowUp;
-  final String? nextFollowUpDate;
-  final DateTime timestamp;
-  final FollowUpUser? user;
-
-  FollowUp({
-    required this.id,
-    required this.remarks,
-    this.statusBeforeFollowUpName,
-    this.statusAfterFollowUp,
-    this.nextFollowUpDate,
-    required this.timestamp,
-    this.user,
-  });
-
-  factory FollowUp.fromJson(Map<String, dynamic> json) {
-    return FollowUp(
-      id: json['id'],
-      remarks: (json['remarks'] ?? '').isNotEmpty
-          ? json['remarks']
-          : 'No remarks provided.',
-      statusBeforeFollowUpName: json['status_before_follow_up_name'],
-      statusAfterFollowUp: json['status_after_follow_up_name'],
-      nextFollowUpDate: json['next_follow_up_date'],
-      timestamp: DateTime.parse(json['timestamp']),
-      user: json['user'] != null ? FollowUpUser.fromJson(json['user']) : null,
-    );
-  }
-}
-
-// ------------------------------------------------------
-// FollowUp Page
-// ------------------------------------------------------
+import '../../providers/auth_provider.dart';
 
 class FollowUpPage extends StatefulWidget {
   final int enquiryId;
@@ -73,6 +26,7 @@ class FollowUpPage extends StatefulWidget {
 class _FollowUpPageState extends State<FollowUpPage> {
   final EnquiryService _service = EnquiryService();
   late Future<List<FollowUp>> _followUps;
+  Logger logger = Logger();
 
   @override
   void initState() {
@@ -81,32 +35,41 @@ class _FollowUpPageState extends State<FollowUpPage> {
   }
 
   void _loadFollowUps() {
-    _followUps = _service
-        .getFollowUpsForEnquiry(widget.enquiryId)
-        .then((list) => list.map((e) => FollowUp.fromJson(e)).toList());
+    _followUps = _service.getFollowUpsForEnquiry(widget.enquiryId).then((list) {
+      try {
+        return list
+            .whereType<Map>() // avoid backend returning strings
+            .map((e) => FollowUp.fromJson(e as Map<String, dynamic>))
+            .toList();
+      } catch (err) {
+        throw Exception("Invalid follow-up data: $err");
+      }
+    });
   }
 
-  Future<void> _openEditor(FollowUp? followUp) async {
+  Future<void> _openEditor(FollowUp followUp) async {
     try {
       final enquiryData = await _service.getEnquiryById(widget.enquiryId);
       final enquiry = Enquiry.fromJson(enquiryData);
-      if (mounted) {
-        final result = await showModalBottomSheet<bool?>(
-          context: context,
-          isScrollControlled: true,
-          backgroundColor: Colors.transparent,
-          builder: (context) =>
-              AddFollowUpSheet(enquiry: enquiry, existingFollowUp: followUp),
-        );
-        if (mounted && result == true) {
-          setState(() => _loadFollowUps());
-        }
+
+      if (!mounted) return;
+
+      final result = await showModalBottomSheet<bool?>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) =>
+            AddFollowUpSheet(enquiry: enquiry, existingFollowUp: followUp),
+      );
+
+      if (mounted && result == true) {
+        setState(() => _loadFollowUps());
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Failed to open editor: $e')));
+      ).showSnackBar(SnackBar(content: Text("Failed to open editor: $e")));
     }
   }
 
@@ -117,24 +80,23 @@ class _FollowUpPageState extends State<FollowUpPage> {
     return Scaffold(
       appBar: AppBar(
         scrolledUnderElevation: 0,
-        surfaceTintColor: Colors.transparent,
         backgroundColor: cs.surface,
         leading: const BackButtonIos(),
         title: const Text('Follow-up History'),
       ),
       body: FutureBuilder<List<FollowUp>>(
         future: _followUps,
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (snap.hasError) {
+          if (snapshot.hasError) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text(
-                  'Failed to load follow-ups:\n${snap.error}',
+                  'Failed to load follow-ups:\n${snapshot.error}',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: cs.error),
                 ),
@@ -142,12 +104,12 @@ class _FollowUpPageState extends State<FollowUpPage> {
             );
           }
 
-          final data = snap.data!;
+          final data = snapshot.data ?? [];
           if (data.isEmpty) {
             return Center(
               child: Text(
                 'No follow-ups recorded yet.',
-                style: TextStyle(fontSize: 16, color: cs.onSurfaceVariant),
+                style: TextStyle(color: cs.onSurfaceVariant),
               ),
             );
           }
@@ -155,12 +117,12 @@ class _FollowUpPageState extends State<FollowUpPage> {
           return ListView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: data.length,
-            itemBuilder: (context, i) {
+            itemBuilder: (context, index) {
               return _TimelineTile(
-                followUp: data[i],
-                isFirst: i == 0,
-                isLast: i == data.length - 1,
-                onEdit: () => _openEditor(data[i]),
+                followUp: data[index],
+                isFirst: index == 0,
+                isLast: index == data.length - 1,
+                onEdit: () => _openEditor(data[index]),
               );
             },
           );
@@ -170,7 +132,11 @@ class _FollowUpPageState extends State<FollowUpPage> {
   }
 }
 
-class _TimelineTile extends StatelessWidget {
+// -----------------------------------------------------------------------------
+// TILE WITH ANIMATIONS
+// -----------------------------------------------------------------------------
+
+class _TimelineTile extends StatefulWidget {
   final FollowUp followUp;
   final bool isFirst;
   final bool isLast;
@@ -184,92 +150,164 @@ class _TimelineTile extends StatelessWidget {
   });
 
   @override
+  State<_TimelineTile> createState() => _TimelineTileState();
+}
+
+class _TimelineTileState extends State<_TimelineTile>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _fade;
+  late Animation<Offset> _slide;
+  late Animation<double> _dotScale;
+  Logger logger = Logger();
+
+  @override
+  void initState() {
+    super.initState();
+
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 450),
+    );
+
+    // Small stagger effect
+    Future.delayed(Duration(milliseconds: widget.isFirst ? 0 : 80), () {
+      if (mounted) _controller.forward();
+    });
+
+    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+
+    _slide = Tween<Offset>(
+      begin: const Offset(0, 0.20),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+
+    _dotScale = Tween<double>(
+      begin: 0.2,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.elasticOut));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final time = followUp.timestamp.toLocal();
+    final auth = Provider.of<AuthProvider>(context, listen: false);
 
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildConnector(context),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 24),
-              child: Material(
-                color: cs.surface,
-                borderRadius: BorderRadius.circular(12),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onLongPress: () {
-                    onEdit();
-                    ScaffoldMessenger.of(context)
-                      ..hideCurrentSnackBar()
-                      ..showSnackBar(
-                        const SnackBar(
-                          content: Text('Opening follow-up…'),
-                          duration: Duration(milliseconds: 600),
-                        ),
-                      );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
+    final currentUserId = auth.user?.profileId;
+    final currentUserRole = auth.user?.role;
+    final followUpOwnerId = widget.followUp.user?.id;
+
+    final bool canEdit =
+        currentUserRole == 'Admin' || currentUserId == followUpOwnerId;
+
+    final time = widget.followUp.timestamp.toLocal();
+
+    return FadeTransition(
+      opacity: _fade,
+      child: SlideTransition(
+        position: _slide,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildConnector(context),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  child: Material(
+                    color: cs.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: cs.outlineVariant),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          DateFormat.yMMMd().add_jm().format(time),
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: isFirst ? cs.primary : cs.onSurface,
-                            fontSize: 16,
+                      onLongPress: canEdit ? widget.onEdit : null,
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: cs.outlineVariant.withValues(alpha: 0.5),
                           ),
+                          borderRadius: BorderRadius.circular(12),
                         ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // DATE + Edit button
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  DateFormat.yMMMd().add_jm().format(time),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: widget.isFirst
+                                        ? cs.primary
+                                        : cs.onSurface,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                if (canEdit)
+                                  IconButton(
+                                    icon: Icon(
+                                      Icons.edit_outlined,
+                                      color: cs.primary,
+                                    ),
+                                    onPressed: widget.onEdit,
+                                  ),
+                              ],
+                            ),
 
-                        Divider(color: cs.outlineVariant),
+                            Divider(color: cs.outlineVariant),
 
-                        _info(
-                          context,
-                          icon: Icons.person_outline,
-                          label: "By:",
-                          value: followUp.user?.fullName ?? "N/A",
+                            _info(
+                              context,
+                              icon: Icons.person_outline,
+                              label: "By:",
+                              value: widget.followUp.user?.fullName ?? "N/A",
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            _status(context),
+
+                            const SizedBox(height: 12),
+
+                            Text(
+                              widget.followUp.remarks,
+                              style: TextStyle(
+                                color: cs.onSurfaceVariant,
+                                height: 1.4,
+                              ),
+                            ),
+
+                            if (widget.followUp.nextFollowUpDate != null &&
+                                widget.followUp.nextFollowUpDate!
+                                    .trim()
+                                    .isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 12),
+                                child: _nextFollowUp(context),
+                              ),
+                          ],
                         ),
-                        const SizedBox(height: 8),
-
-                        _status(context),
-                        const SizedBox(height: 12),
-
-                        Text(
-                          followUp.remarks,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: cs.onSurfaceVariant,
-                            height: 1.5,
-                          ),
-                        ),
-
-                        if (followUp.nextFollowUpDate != null) ...[
-                          const SizedBox(height: 12),
-                          _nextFollowUp(context),
-                        ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  // CONNECTOR
   Widget _buildConnector(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
@@ -278,32 +316,38 @@ class _TimelineTile extends StatelessWidget {
         Expanded(
           child: Container(
             width: 2,
-            color: isFirst ? Colors.transparent : cs.outlineVariant,
+            color: widget.isFirst ? Colors.transparent : cs.outlineVariant,
           ),
         ),
-        Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isFirst ? cs.primary : cs.outline,
+
+        // Animated Dot
+        ScaleTransition(
+          scale: _dotScale,
+          child: Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: widget.isFirst ? cs.primary : cs.outline,
+            ),
           ),
         ),
+
         Expanded(
           child: Container(
             width: 2,
-            color: isLast ? Colors.transparent : cs.outlineVariant,
+            color: widget.isLast ? Colors.transparent : cs.outlineVariant,
           ),
         ),
       ],
     );
   }
 
-  // STATUS CHANGE DISPLAY
   Widget _status(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final before = followUp.statusBeforeFollowUpName;
-    final after = followUp.statusAfterFollowUp;
+
+    final before = widget.followUp.statusBeforeFollowUpName;
+    final after = widget.followUp.statusAfterFollowUpName;
 
     if (after == null) {
       return _info(
@@ -353,19 +397,16 @@ class _TimelineTile extends StatelessWidget {
         Expanded(
           child: RichText(
             text: TextSpan(
-              style: TextStyle(
-                color: cs.onSurface,
-                fontWeight: FontWeight.w500,
-              ),
               children: [
                 TextSpan(
                   text: before,
                   style: const TextStyle(
+                    color: Colors.grey,
                     decoration: TextDecoration.lineThrough,
                   ),
                 ),
                 TextSpan(
-                  text: " ➜ ",
+                  text: "  ➜  ",
                   style: TextStyle(
                     color: cs.primary,
                     fontWeight: FontWeight.bold,
@@ -373,7 +414,10 @@ class _TimelineTile extends StatelessWidget {
                 ),
                 TextSpan(
                   text: after,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: cs.onSurface,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ],
             ),
@@ -383,10 +427,15 @@ class _TimelineTile extends StatelessWidget {
     );
   }
 
-  // NEXT FOLLOW-UP BOX
   Widget _nextFollowUp(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final date = DateTime.parse(followUp.nextFollowUpDate!).toLocal();
+
+    DateTime? date;
+    try {
+      date = DateTime.parse(widget.followUp.nextFollowUpDate!).toLocal();
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -413,7 +462,6 @@ class _TimelineTile extends StatelessWidget {
     );
   }
 
-  // REUSABLE ROW
   Widget _info(
     BuildContext context, {
     required IconData icon,

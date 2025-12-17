@@ -1,4 +1,6 @@
-// ignore_for_file: unused_element, use_build_context_synchronously
+// AdminDashboard.dart
+
+// ignore_for_file: use_build_context_synchronously
 
 import 'dart:async';
 import 'package:dreamvision/charts/enquiry_status_data.dart';
@@ -9,8 +11,8 @@ import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'package:go_router/go_router.dart';
 import 'package:logger/logger.dart';
 import 'package:open_filex/open_filex.dart';
-
 import '../../charts/telecaller_call_chart.dart';
+import '../../widgets/filter_bottom_sheet.dart';
 import 'paginated_enquiry_list.dart';
 
 class AdminDashboard extends StatefulWidget {
@@ -37,14 +39,27 @@ class _AdminDashboardState extends State<AdminDashboard>
   int _assignedCount = 0;
   bool _isUploading = false;
 
+  String? _selectedStandard;
+  String? _selectedStatus;
+
+  final List<String> _standardOptions = ['8th', '9th', '10th', '11th', '12th'];
+  final List<String> _statusOptions = [
+    'interested',
+    'converted',
+    'closed',
+    'follow-up',
+  ];
+
   @override
   void initState() {
     super.initState();
-
-    _enquiryService = EnquiryService(); // FIXED: Created only here
-
+    _enquiryService = EnquiryService();
     _tabController = TabController(length: 2, vsync: this);
-    _summaryDataFuture = _fetchSummaryData();
+
+    _summaryDataFuture = _fetchSummaryData(
+      standard: _selectedStandard,
+      status: _selectedStatus,
+    );
   }
 
   @override
@@ -53,106 +68,213 @@ class _AdminDashboardState extends State<AdminDashboard>
     super.dispose();
   }
 
-  Future<Map<String, dynamic>> _fetchSummaryData() async {
+  Future<Map<String, dynamic>> _fetchSummaryData({
+    String? standard,
+    String? status,
+  }) async {
     try {
-      final summaryData = await _enquiryService.getEnquiryStatusSummary();
+      final summaryData = await _enquiryService.getEnquiryStatusSummary(
+        standard: standard,
+        status: status,
+      );
 
       final List<dynamic> chartSummaryData = summaryData['chart_data'] ?? [];
-      final int unassignedCount = summaryData['unassigned_count'] ?? 0;
-      final int assignedCount = summaryData['assigned_count'] ?? 0;
 
-      final parsedChartData = _buildChartDataFromSummary(chartSummaryData);
+      _chartDataSource = _buildChartDataFromSummary(chartSummaryData);
+      _unassignedCount = summaryData['unassigned_count'] ?? 0;
+      _assignedCount = summaryData['assigned_count'] ?? 0;
 
-      if (mounted) {
-        setState(() {
-          _chartDataSource = parsedChartData;
-          _unassignedCount = unassignedCount;
-          _assignedCount = assignedCount;
-        });
-      }
+      logger.i(
+        'Enquiry Status Summary Data: chart_data=${_chartDataSource.length}, unassigned=$_unassignedCount, assigned=$_assignedCount',
+      );
+
       return summaryData;
-    } catch (e) {
-      logger.e("Failed to fetch summary data: $e");
+    } catch (e, st) {
+      logger.e("Failed to fetch summary data", error: e, stackTrace: st);
       rethrow;
     }
   }
 
   Future<void> _refreshAllData() async {
     setState(() {
-      _summaryDataFuture = _fetchSummaryData();
+      _summaryDataFuture = _fetchSummaryData(
+        standard: _selectedStandard,
+        status: _selectedStatus,
+      );
     });
 
-    _unassignedListKey.currentState?.refresh();
-    _assignedListKey.currentState?.refresh();
+    _unassignedListKey.currentState?.refreshWithFilters(
+      _selectedStandard,
+      _selectedStatus,
+    );
+    _assignedListKey.currentState?.refreshWithFilters(
+      _selectedStandard,
+      _selectedStatus,
+    );
 
     await _summaryDataFuture;
   }
 
-  List<ChartData> _buildChartDataFromSummary(List<dynamic> summaryData) {
-    if (summaryData.isEmpty) return [];
-    final total = summaryData.fold<int>(
-      0,
-      (sum, item) => sum + (item['count'] as int),
-    );
-    return summaryData.map((item) {
-      final status = item['status'] as String;
-      final count = item['count'] as int;
-      final percentage = total > 0 ? (count / total) * 100 : 0.0;
-      return ChartData(status, percentage, _getStatusColor(status));
-    }).toList();
+  int _safeInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.round();
+    final s = value?.toString() ?? '';
+    final parsed = int.tryParse(s);
+    if (parsed == null) {
+      logger.w('safeInt: could not parse "$value" as int, defaulting to 0');
+      return 0;
+    }
+    return parsed;
   }
 
-  Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'interested':
-        return Colors.blue.shade600;
-      case 'converted':
-        return Colors.green.shade600;
-      case 'follow-up':
-        return Colors.orange.shade600;
-      case 'closed':
-        return Colors.grey.shade600;
-      default:
-        return Colors.purple.shade600;
+  double _safePercent(int count, int total) {
+    if (total <= 0) return 0.0;
+    final raw = (count / total) * 100.0;
+    if (raw.isNaN || raw.isInfinite) return 0.0;
+    final clamped = raw.clamp(0.0, 100.0);
+    return clamped;
+  }
+
+  List<ChartData> _buildChartDataFromSummary(List<dynamic> summaryData) {
+    if (summaryData.isEmpty) {
+      logger.i('buildChartDataFromSummary: empty summaryData');
+      return [];
     }
+
+    int total = 0;
+    for (final item in summaryData) {
+      if (item is! Map) {
+        logger.w('buildChartDataFromSummary: skipping non-map item: $item');
+        continue;
+      }
+      total += _safeInt(item['count']);
+    }
+
+    if (total <= 0) {
+      logger.w('buildChartDataFromSummary: total <= 0, returning empty list');
+      return [];
+    }
+
+    final List<ChartData> chartList = [];
+    for (final item in summaryData) {
+      if (item is! Map) {
+        logger.w('buildChartDataFromSummary: skipping invalid item: $item');
+        continue;
+      }
+
+      final statusRaw = item['status'];
+      final String status =
+          (statusRaw == null || statusRaw.toString().trim().isEmpty)
+          ? 'Unknown'
+          : statusRaw.toString().trim();
+
+      final int count = _safeInt(item['count']);
+      final double percentage = _safePercent(count, total);
+
+      chartList.add(ChartData(status, percentage, _getStatusColor(status)));
+    }
+
+    logger.i(
+      'buildChartDataFromSummary: total=$total, chartList=${chartList.map((e) => '${e.status}:${e.value.toStringAsFixed(1)}').toList()}',
+    );
+
+    return chartList;
+  }
+
+  Color _getStatusColor(String? status) {
+    final key = (status ?? '').trim().toLowerCase();
+
+    final map = {
+      'interested': Colors.blue.shade600,
+      'converted': Colors.green.shade600,
+      'follow-up': Colors.orange.shade600,
+      'closed': Colors.grey.shade600,
+      'unknown': Colors.purple.shade400,
+    };
+
+    return map[key] ?? Colors.purple.shade600;
   }
 
   Future<void> _pickAndUploadFile() async {
     if (_isUploading) return;
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
+
+    final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['xlsx', 'csv'],
     );
+
     if (result != null && result.files.single.path != null) {
-      String filePath = result.files.single.path!;
+      final filePath = result.files.single.path!;
       setState(() => _isUploading = true);
+
       try {
         final response = await _enquiryService.bulkUploadEnquiries(filePath);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(response['message'] ?? 'Upload successful!'),
-              backgroundColor: Colors.green,
-            ),
-          );
 
-          _refreshAllData();
-        }
-      } catch (e) {
-        logger.e(e);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Upload failed: $e', maxLines: 5),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 7),
-            ),
-          );
-        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(response['message'] ?? 'Upload successful!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        await _refreshAllData();
+      } catch (e, st) {
+        logger.e("Bulk upload failed", error: e, stackTrace: st);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Upload failed: $e', maxLines: 5),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 7),
+          ),
+        );
       } finally {
         if (mounted) setState(() => _isUploading = false);
       }
     }
+  }
+
+  void _applyFilters(String? standard, String? status) {
+    setState(() {
+      _selectedStandard = standard;
+      _selectedStatus = status;
+
+      _summaryDataFuture = _fetchSummaryData(
+        standard: standard,
+        status: status,
+      );
+    });
+
+    _unassignedListKey.currentState?.refreshWithFilters(standard, status);
+    _assignedListKey.currentState?.refreshWithFilters(standard, status);
+  }
+
+  void _clearFilters() {
+    setState(() {
+      _selectedStandard = null;
+      _selectedStatus = null;
+
+      _summaryDataFuture = _fetchSummaryData(standard: null, status: null);
+    });
+
+    _unassignedListKey.currentState?.refreshWithFilters(null, null);
+    _assignedListKey.currentState?.refreshWithFilters(null, null);
+  }
+
+  void _openFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return EnquiryFilterBottomSheet(
+          initialStandard: _selectedStandard,
+          initialStatus: _selectedStatus,
+          standardOptions: _standardOptions,
+          statusOptions: _statusOptions,
+          onApplyFilters: _applyFilters,
+          onClearFilters: _clearFilters,
+        );
+      },
+    );
   }
 
   @override
@@ -170,7 +292,6 @@ class _AdminDashboardState extends State<AdminDashboard>
               errorBuilder: (c, e, s) => const Icon(Icons.menu),
             ),
             onPressed: () => Scaffold.of(context).openDrawer(),
-            tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
           ),
         ),
         actions: [
@@ -187,113 +308,29 @@ class _AdminDashboardState extends State<AdminDashboard>
           ),
           const SizedBox(width: 12),
           IconButton(
+            icon: const Icon(Icons.filter_list),
+            onPressed: _openFilterSheet,
+          ),
+          const SizedBox(width: 8),
+          IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => context.push('/settings'),
           ),
         ],
       ),
       drawer: _buildDrawer(),
-      floatingActionButton: SpeedDial(
-        icon: Icons.add,
-        activeIcon: Icons.close,
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Theme.of(context).colorScheme.onPrimary,
-        elevation: 8,
-        spaceBetweenChildren: 10,
-        animationCurve: Curves.easeInOutBack,
-        overlayOpacity: 0.3,
-
-        children: [
-          SpeedDialChild(
-            child: const Icon(Icons.upload_file_rounded, color: Colors.white),
-            label: "Bulk Upload",
-            labelStyle: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-            backgroundColor: Colors.teal.shade600,
-            foregroundColor: Colors.white,
-            elevation: 5,
-            onTap: _pickAndUploadFile,
-          ),
-          SpeedDialChild(
-            child: const Icon(Icons.download_rounded, color: Colors.white),
-            label: "Download Required Sheet",
-            labelStyle: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-            backgroundColor: Colors.blueGrey.shade600,
-            foregroundColor: Colors.white,
-            elevation: 5,
-            onTap: () async {
-              try {
-                final filePath = await _enquiryService
-                    .downloadEnquiryTemplate();
-
-                // ✅ Show confirmation snackbar with "Open" action
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('Template saved in Downloads folder'),
-                    action: SnackBarAction(
-                      label: 'Open',
-                      onPressed: () async {
-                        await OpenFilex.open(filePath);
-                      },
-                    ),
-                    duration: const Duration(seconds: 8),
-                  ),
-                );
-              } catch (e) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text('Download failed: $e')));
-                logger.e(e);
-              }
-            },
-          ),
-
-          SpeedDialChild(
-            child: const Icon(
-              Icons.person_add_alt_1_rounded,
-              color: Colors.white,
-            ),
-            label: "Add Enquiry",
-            labelStyle: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-            backgroundColor: Colors.indigo.shade600,
-            foregroundColor: Colors.white,
-            elevation: 5,
-            onTap: () => context.push('/add-enquiry'),
-          ),
-        ],
-      ),
-
+      floatingActionButton: _buildFAB(),
       body: FutureBuilder<Map<String, dynamic>>(
         future: _summaryDataFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
+
           if (snapshot.hasError) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('Error: ${snapshot.error}', textAlign: TextAlign.center),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => setState(() {
-                      _summaryDataFuture = _fetchSummaryData();
-                    }),
-                    child: const Text('Retry'),
-                  ),
-                ],
-              ),
-            );
+            return _buildErrorSection(snapshot.error.toString());
           }
+
           return _buildDashboardContent();
         },
       ),
@@ -314,6 +351,97 @@ class _AdminDashboardState extends State<AdminDashboard>
             },
           ),
           const Spacer(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFAB() {
+    return SpeedDial(
+      icon: Icons.add,
+      activeIcon: Icons.close,
+      backgroundColor: Theme.of(context).colorScheme.primary,
+      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+      elevation: 8,
+      spaceBetweenChildren: 10,
+      animationCurve: Curves.easeInOutBack,
+      overlayOpacity: 0.3,
+      children: [
+        SpeedDialChild(
+          child: const Icon(Icons.upload_file_rounded, color: Colors.white),
+          label: 'Bulk Upload',
+          backgroundColor: Colors.teal.shade600,
+          foregroundColor: Colors.white,
+          elevation: 5,
+          onTap: _pickAndUploadFile,
+        ),
+        SpeedDialChild(
+          child: const Icon(Icons.download_rounded, color: Colors.white),
+          label: 'Download Required Sheet',
+          backgroundColor: Colors.blueGrey.shade600,
+          foregroundColor: Colors.white,
+          elevation: 5,
+          onTap: () async {
+            try {
+              final filePath = await _enquiryService.downloadEnquiryTemplate();
+
+              if (!mounted) return;
+
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Template saved in Downloads folder'),
+                  action: SnackBarAction(
+                    label: 'Open',
+                    onPressed: () async {
+                      await OpenFilex.open(filePath);
+                    },
+                  ),
+                  duration: const Duration(seconds: 8),
+                ),
+              );
+            } catch (e, st) {
+              logger.e("Download failed", error: e, stackTrace: st);
+              if (mounted) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('Download failed: $e')));
+              }
+            }
+          },
+        ),
+        SpeedDialChild(
+          child: const Icon(
+            Icons.person_add_alt_1_rounded,
+            color: Colors.white,
+          ),
+          label: 'Add Enquiry',
+          backgroundColor: Colors.indigo.shade600,
+          foregroundColor: Colors.white,
+          elevation: 5,
+          onTap: () => context.push('/add-enquiry'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildErrorSection(String error) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text('Error: $error', textAlign: TextAlign.center),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                _summaryDataFuture = _fetchSummaryData(
+                  standard: _selectedStandard,
+                  status: _selectedStatus,
+                );
+              });
+            },
+            child: const Text('Retry'),
+          ),
         ],
       ),
     );
@@ -358,47 +486,18 @@ class _AdminDashboardState extends State<AdminDashboard>
               PaginatedEnquiryList(
                 key: _unassignedListKey,
                 type: EnquiryListType.unassigned,
+                initialStandard: _selectedStandard,
+                initialStatus: _selectedStatus,
               ),
               PaginatedEnquiryList(
                 key: _assignedListKey,
                 type: EnquiryListType.assigned,
+                initialStandard: _selectedStandard,
+                initialStatus: _selectedStatus,
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildActionButtons() {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          OutlinedButton.icon(
-            onPressed: _isUploading ? null : _pickAndUploadFile,
-            icon: _isUploading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.upload_file_outlined),
-            label: Text(_isUploading ? 'Uploading...' : 'Bulk Add'),
-          ),
-          const SizedBox(width: 8),
-          ElevatedButton.icon(
-            onPressed: () => context.push('/add-enquiry'),
-            icon: const Icon(Icons.add),
-            label: const Text('Add Enquiry'),
-            style: ElevatedButton.styleFrom(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -421,13 +520,14 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) {
-
     return Container(
-      color: Theme.of(context).colorScheme.surface, 
+      color: Theme.of(context).colorScheme.surface,
       child: _tabBar,
     );
   }
 
   @override
-  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) => true;
+  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) {
+    return true;
+  }
 }

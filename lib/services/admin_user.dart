@@ -19,12 +19,12 @@ class AdminUserService {
   late final Dio _dio;
 
   AdminUserService() {
-    _dio = Dio(BaseOptions(
-      baseUrl: _baseUrl,
-      headers: {
-        'Content-Type': 'application/json; charset=UTF-8',
-      },
-    ));
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: _baseUrl,
+        headers: {'Content-Type': 'application/json; charset=UTF-8'},
+      ),
+    );
 
     _dio.interceptors.add(
       InterceptorsWrapper(
@@ -36,7 +36,8 @@ class AdminUserService {
               requestOptions: options,
               message: 'Authentication token not found. Please log in.',
               error: const SocketException(
-                  'Authentication token not found. Please log in.'),
+                'Authentication token not found. Please log in.',
+              ),
               type: DioExceptionType.cancel,
             );
             return handler.reject(error);
@@ -53,7 +54,11 @@ class AdminUserService {
   // ---------------------------------------------------------------------------
   String _handleDioError(DioException e) {
     // Log for developer debugging
-    logger.e('API Error: ${e.message}', error: e.error, stackTrace: e.stackTrace);
+    logger.e(
+      'API Error: ${e.message}',
+      error: e.error,
+      stackTrace: e.stackTrace,
+    );
 
     // 1. Handle Network/Connection Issues
     if (e.type == DioExceptionType.connectionTimeout ||
@@ -77,11 +82,11 @@ class AdminUserService {
 
       // Check for HTML (The fix for your IntegrityError screen)
       if (data is String) {
-         if (data.toLowerCase().contains('<!doctype html>') || 
-             data.toLowerCase().contains('<html')) {
-           return 'Server returned an invalid response.';
-         }
-         return data;
+        if (data.toLowerCase().contains('<!doctype html>') ||
+            data.toLowerCase().contains('<html')) {
+          return 'Server returned an invalid response.';
+        }
+        return data;
       }
 
       // Client Error (400-499): Extract specific validation message
@@ -90,14 +95,17 @@ class AdminUserService {
         if (data['detail'] != null) return data['detail'].toString();
         if (data['message'] != null) return data['message'].toString();
         if (data['error'] != null) return data['error'].toString();
-        
+
         // Field-specific errors (e.g., { "username": ["Already exists"] })
         if (data.isNotEmpty) {
           final firstKey = data.keys.first;
           final firstValue = data[firstKey];
-          
+
           // Format the key (e.g., phone_number -> Phone number)
-          final formattedKey = firstKey.toString().replaceAll('_', ' ').capitalize();
+          final formattedKey = firstKey
+              .toString()
+              .replaceAll('_', ' ')
+              .capitalize();
 
           if (firstValue is List) {
             return "$formattedKey: ${firstValue.first}";
@@ -128,7 +136,7 @@ class AdminUserService {
     try {
       final response = await _dio.get('/users/admin/list-users/');
       logger.d('API Response [${response.statusCode}]: ${response.data}');
-      
+
       final responseBody = response.data;
       if (responseBody is Map && responseBody.containsKey('results')) {
         return responseBody['results'] as List<dynamic>;
@@ -149,10 +157,10 @@ class AdminUserService {
 
     try {
       final response = await _dio.delete(url);
-      
+
       if (response.statusCode == 204) {
-         logger.d('API Response [204]: No Content (Success)');
-         return {'detail': 'Operation successful.'};
+        logger.d('API Response [204]: No Content (Success)');
+        return {'detail': 'Operation successful.'};
       }
       logger.d('API Response [${response.statusCode}]: ${response.data}');
       return response.data ?? {};
@@ -167,6 +175,23 @@ class AdminUserService {
 
     try {
       final response = await _dio.post(url);
+
+      logger.d('API Response [${response.statusCode}]: ${response.data}');
+      return response.data ?? {};
+    } catch (e) {
+      throw Exception(e is DioException ? _handleDioError(e) : e.toString());
+    }
+  }
+
+  Future<Map<String, dynamic>> updateUser(
+    int userId,
+    Map<String, dynamic> data,
+  ) async {
+    final url = '/users/admin/edit-user/$userId/';
+    logger.i('Updating user $userId with data: $data');
+
+    try {
+      final response = await _dio.put(url, data: data);
 
       logger.d('API Response [${response.statusCode}]: ${response.data}');
       return response.data ?? {};

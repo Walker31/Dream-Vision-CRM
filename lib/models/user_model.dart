@@ -1,5 +1,5 @@
 class User {
-  final int profileId;
+  final int profileId;   // <-- NOW CORRECT FOR LOGIN ALSO
   final int userId;
   final String username;
   final String email;
@@ -12,7 +12,7 @@ class User {
   final String dateOfJoining;
   final String status;
   final String remarks;
-  final String? dateOfResignation; 
+  final String? dateOfResignation;
   final String profilePicture;
   final String createdAt;
   final String updatedAt;
@@ -38,7 +38,10 @@ class User {
     required this.createdAt,
     required this.updatedAt,
   });
+
   String get name => '$firstName $lastName'.trim();
+
+  /// Normal Profile JSON (from /users/profile/)
   factory User.fromJson(Map<String, dynamic> json) {
     final userData = json['user'] as Map<String, dynamic>? ?? {};
 
@@ -61,5 +64,52 @@ class User {
       createdAt: json['created_on'] ?? '',
       updatedAt: json['updated_at'] ?? '',
     );
+  }
+
+  /// Login response JSON (from /users/login/)
+  factory User.fromLoginJson(Map<String, dynamic> json) {
+    return User(
+      profileId: json['profile_id'] ?? 0,  // <-- FIXED HERE
+      userId: json['id'] ?? 0,
+      username: json['username'] ?? '',
+      email: json['email'] ?? '',
+      firstName: json['first_name'] ?? '',
+      lastName: json['last_name'] ?? '',
+      role: json['role'] ?? 'N/A',
+      staffId: '',
+      phoneNumber: '',
+      address: '',
+      dateOfJoining: '',
+      status: '',
+      remarks: '',
+      dateOfResignation: null,
+      profilePicture: '',
+      createdAt: '',
+      updatedAt: '',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': profileId,
+      'user': {
+        'id': userId,
+        'username': username,
+        'email': email,
+        'first_name': firstName,
+        'last_name': lastName,
+      },
+      'role': role,
+      'staff_id': staffId,
+      'phone_number': phoneNumber,
+      'address': address,
+      'date_of_joining': dateOfJoining,
+      'status': status,
+      'remarks': remarks,
+      'date_of_resignation': dateOfResignation,
+      'profile_picture': profilePicture,
+      'created_on': createdAt,
+      'updated_at': updatedAt,
+    };
   }
 }

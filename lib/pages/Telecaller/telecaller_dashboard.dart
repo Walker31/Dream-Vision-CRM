@@ -10,7 +10,6 @@ import '../../charts/telecaller_call_chart.dart';
 
 class TelecallerDashboard extends StatefulWidget {
   const TelecallerDashboard({super.key});
-
   @override
   State<TelecallerDashboard> createState() => _TelecallerDashboardState();
 }
@@ -21,6 +20,7 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
   Logger logger = Logger();
 
   List<Enquiry> _enquiries = [];
+  List<bool> _animateItems = [];
   int _currentPage = 1;
   bool _hasNextPage = true;
   bool _isLoadingMore = false;
@@ -69,27 +69,48 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
         status: _selectedFilter == 'All' ? null : _selectedFilter,
       );
 
-      final List<dynamic> results = response['results'];
-      final newEnquiries = results
-          .map((data) => Enquiry.fromJson(data))
-          .toList();
+      final results = response['results'] as List<dynamic>;
+      final newEnquiries = results.map((e) => Enquiry.fromJson(e)).toList();
+      final hasNext = response['next'] != null;
 
-      if (mounted) {
+      if (!mounted) return;
+
+      if (page == 1) {
         setState(() {
-          if (page == 1) {
-            _enquiries = newEnquiries;
-          } else {
-            _enquiries.addAll(newEnquiries);
-          }
-          _currentPage = page;
-          _hasNextPage = response['next'] != null;
+          _enquiries = newEnquiries;
+          _currentPage = 1;
+          _hasNextPage = hasNext;
+          _animateItems = List<bool>.filled(_enquiries.length, false);
         });
+
+        for (int i = 0; i < _enquiries.length; i++) {
+          Future.delayed(Duration(milliseconds: 50 * i), () {
+            if (!mounted) return;
+            if (i >= _animateItems.length) return;
+            setState(() => _animateItems[i] = true);
+          });
+        }
+      } else {
+        final startIdx = _enquiries.length;
+        setState(() {
+          _enquiries.addAll(newEnquiries);
+          _currentPage = page;
+          _hasNextPage = hasNext;
+          _animateItems.addAll(List<bool>.filled(newEnquiries.length, false));
+        });
+
+        for (int offset = 0; offset < newEnquiries.length; offset++) {
+          final index = startIdx + offset;
+          Future.delayed(Duration(milliseconds: 40 * offset), () {
+            if (!mounted) return;
+            if (index >= _animateItems.length) return;
+            setState(() => _animateItems[index] = true);
+          });
+        }
       }
     } catch (e) {
       logger.e("Failed to fetch dashboard data: $e");
-      if (mounted) {
-        setState(() => _error = e.toString());
-      }
+      if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) {
         setState(() {
@@ -106,10 +127,7 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
 
   void _onFilterChanged(String filter) {
     if (_selectedFilter == filter) return;
-
-    setState(() {
-      _selectedFilter = filter;
-    });
+    setState(() => _selectedFilter = filter);
     _refresh();
   }
 
@@ -118,15 +136,10 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
     if (await canLaunchUrl(launchUri)) {
       await launchUrl(launchUri);
     } else {
-      logger.e('Could not launch $launchUri');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Could not open dialer for $phoneNumber"),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Could not open dialer for $phoneNumber")),
+      );
     }
   }
 
@@ -135,9 +148,7 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) {
-        return AddFollowUpSheet(enquiry: enquiry);
-      },
+      builder: (_) => AddFollowUpSheet(enquiry: enquiry),
     );
   }
 
@@ -154,34 +165,30 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
           child: Image.asset(
             'assets/login_bg.png',
             width: 50,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: cs.surfaceContainerHighest, // Dark Mode Safe
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    'DV',
-                    style: TextStyle(
-                      color: cs.onSurfaceVariant, // Dark Mode Safe
-                      fontWeight: FontWeight.bold,
-                    ),
+            errorBuilder: (_, __, ___) => Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHighest,
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  'DV',
+                  style: TextStyle(
+                    color: cs.onSurfaceVariant,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-              );
-            },
+              ),
+            ),
           ),
         ),
         title: const Text('Telecalling Dashboard'),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
-            onPressed: () {
-              context.push('/settings');
-            },
+            onPressed: () => context.push('/settings'),
           ),
         ],
       ),
@@ -242,47 +249,44 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
     final cs = Theme.of(context).colorScheme;
 
     return Wrap(
-      spacing: 8.0,
-      runSpacing: 4.0,
+      spacing: 8,
+      runSpacing: 4,
       children: _filters.map((filter) {
         final bool isSelected = _selectedFilter == filter;
-        return FilterChip(
-          label: Text(filter),
-          selected: isSelected,
-          showCheckmark: false,
-          selectedColor: cs.primary,
-          // Fix: Use onPrimary for selected text so it's visible on dark/light
-          labelStyle: TextStyle(
-            color: isSelected ? cs.onPrimary : cs.onSurfaceVariant,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+
+        return AnimatedScale(
+          scale: isSelected ? 1.1 : 1.0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          child: FilterChip(
+            label: Text(filter),
+            selected: isSelected,
+            showCheckmark: false,
+            selectedColor: cs.primary,
+            labelStyle: TextStyle(
+              color: isSelected ? cs.onPrimary : cs.onSurfaceVariant,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            ),
+            backgroundColor: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+            side: BorderSide.none,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            onSelected: (_) => _onFilterChanged(filter),
           ),
-          // Fix: Use container color for unselected state
-          backgroundColor: cs.surfaceContainerHighest.withValues(alpha: 0.5),
-          // Remove border to make it look cleaner
-          side: BorderSide.none,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          onSelected: (selected) {
-            _onFilterChanged(filter);
-          },
         );
       }).toList(),
     );
   }
 
-  // Helper to determine color and text based on urgency
   Widget _buildNextFollowUpBadge(BuildContext context, String isoDateString) {
     final cs = Theme.of(context).colorScheme;
 
     DateTime targetDate;
-    if (isoDateString.endsWith('Z')) {
+    try {
       targetDate = DateTime.parse(isoDateString).toLocal();
-    } else {
-      targetDate = DateTime.parse(isoDateString);
-      if (!targetDate.isUtc) {
-        targetDate = targetDate.toLocal();
-      }
+    } catch (_) {
+      return const SizedBox.shrink();
     }
 
     final now = DateTime.now();
@@ -293,63 +297,61 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
       targetDate.day,
     );
 
-    Color bgColor;
-    Color textColor;
-    String labelText;
-    IconData icon;
+    late Color bgColor;
+    late Color textColor;
+    late String label;
+    late IconData icon;
 
-    // Adaptive Colors Logic
     if (targetDate.isBefore(now)) {
-      // Overdue: Red
       bgColor = cs.errorContainer;
       textColor = cs.error;
-      labelText = "Overdue";
+      label = "Overdue";
       icon = Icons.warning_amber_rounded;
-    } else if (targetDay.isAtSameMomentAs(today)) {
-      // Today: Orange/Tertiary
+    } else if (targetDay == today) {
       bgColor = cs.tertiaryContainer;
       textColor = cs.tertiary;
-      labelText = "Today";
+      label = "Today";
       icon = Icons.today_rounded;
-    } else if (targetDay.isAtSameMomentAs(today.add(const Duration(days: 1)))) {
-      // Tomorrow: Blue/Primary
+    } else if (targetDay == today.add(const Duration(days: 1))) {
       bgColor = cs.primaryContainer;
       textColor = cs.primary;
-      labelText = "Tomorrow";
+      label = "Tomorrow";
       icon = Icons.event_rounded;
     } else {
-      // Future: Grey/Surface Variant
       bgColor = cs.surfaceContainerHighest;
       textColor = cs.onSurfaceVariant;
-      labelText = DateFormat('MMM d').format(targetDate);
+      label = DateFormat('MMM d').format(targetDate);
       icon = Icons.calendar_month_rounded;
     }
 
-    // Append time (h:mm a)
     final timeString = DateFormat.jm().format(targetDate);
 
-    return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: bgColor.withValues(alpha: 0.4), // Subtle background
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: textColor.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: textColor),
-          const SizedBox(width: 6),
-          Text(
-            "$labelText • $timeString",
-            style: TextStyle(
-              color: textColor,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+      opacity: 1,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: bgColor.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: textColor.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: textColor),
+            const SizedBox(width: 6),
+            Text(
+              "$label • $timeString",
+              style: TextStyle(
+                color: textColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -360,7 +362,7 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
     if (_enquiries.isEmpty && !_isFirstLoad && !_isLoadingMore) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 32.0),
+          padding: const EdgeInsets.symmetric(vertical: 32),
           child: Column(
             children: [
               Icon(Icons.search_off_rounded, size: 48, color: cs.outline),
@@ -383,7 +385,7 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
         if (index == _enquiries.length) {
           return _hasNextPage
               ? const Padding(
-                  padding: EdgeInsets.all(16.0),
+                  padding: EdgeInsets.all(16),
                   child: Center(child: CircularProgressIndicator()),
                 )
               : const SizedBox.shrink();
@@ -394,109 +396,128 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
             .trim();
         final status = enquiry.currentStatusName ?? 'Unknown';
 
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.4)),
-          ),
-          elevation: 0,
-          color: cs.surfaceContainerLow,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () => context.push('/enquiry/${enquiry.id}'),
-            child: Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Top Row: Name and Actions
-                  Row(
+        final animated = index < _animateItems.length
+            ? _animateItems[index]
+            : true;
+
+        return AnimatedOpacity(
+          opacity: animated ? 1 : 0,
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeOut,
+          child: AnimatedSlide(
+            offset: animated ? Offset.zero : const Offset(0, 0.12),
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeOut,
+            child: Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: cs.outlineVariant.withValues(alpha: 0.4),
+                ),
+              ),
+              elevation: 0,
+              color: cs.surfaceContainerLow,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => context.push('/enquiry/${enquiry.id}'),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              fullName,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Icon(
-                                  Icons.flag_outlined,
-                                  size: 14,
-                                  color: cs
-                                      .onSurfaceVariant, // Fix: Use Theme color
-                                ),
-                                const SizedBox(width: 4),
                                 Text(
-                                  status,
-                                  style: TextStyle(
-                                    color: cs
-                                        .onSurfaceVariant, // Fix: Use Theme color
-                                    fontSize: 13,
+                                  fullName,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
                                   ),
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.flag_outlined,
+                                      size: 14,
+                                      color: cs.onSurfaceVariant,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      status,
+                                      style: TextStyle(
+                                        color: cs.onSurfaceVariant,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
-                          ],
-                        ),
-                      ),
-                      // Call Button
-                      IconButton.filledTonal(
-                        icon: const Icon(Icons.call, size: 20),
-                        onPressed: () => _makePhoneCall(enquiry.phoneNumber),
-                        style: IconButton.styleFrom(
-                          // Fix: Make it subtle in dark mode
-                          backgroundColor: Colors.green.withValues(alpha: 0.15),
-                          foregroundColor: Colors.green,
-                        ),
-                        tooltip: 'Call',
-                      ),
-
-                      IconButton.filledTonal(
-                        icon: const Icon(Icons.history, size: 18),
-                        onPressed: () {
-                          context.push(
-                            '/follow-ups/${enquiry.id}',
-                            extra: fullName,
-                          );
-                        },
-                        style: IconButton.styleFrom(
-                          // Fix: Use Secondary container for history
-                          backgroundColor: cs.secondaryContainer.withValues(
-                            alpha: 0.5,
                           ),
-                          foregroundColor: cs.onSecondaryContainer,
-                        ),
-                        tooltip: 'History',
+                          IconButton.filledTonal(
+                            icon: const Icon(Icons.call, size: 20),
+                            onPressed: () =>
+                                _makePhoneCall(enquiry.phoneNumber),
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.green.withValues(
+                                alpha: 0.15,
+                              ),
+                              foregroundColor: Colors.green,
+                            ),
+                          ),
+                          IconButton.filledTonal(
+                            icon: const Icon(Icons.history, size: 18),
+                            onPressed: () {
+                              context.push(
+                                '/follow-ups/${enquiry.id}',
+                                extra: fullName,
+                              );
+                            },
+                            style: IconButton.styleFrom(
+                              backgroundColor: cs.secondaryContainer.withValues(
+                                alpha: 0.5,
+                              ),
+                              foregroundColor: cs.onSecondaryContainer,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          if (enquiry.nextFollowUp != null)
+                            _buildNextFollowUpBadge(
+                              context,
+                              enquiry.nextFollowUp!,
+                            ),
+                          const Spacer(),
+                          FilledButton.icon(
+                            onPressed: () =>
+                                _showAddFollowUpForm(context, enquiry),
+                            icon: const Icon(
+                              Icons.add_comment_outlined,
+                              size: 18,
+                            ),
+                            label: const Text('Follow-up'),
+                            style: FilledButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      if (enquiry.nextFollowUp != null)
-                        _buildNextFollowUpBadge(context, enquiry.nextFollowUp!),
-                      const Spacer(),
-                      FilledButton.icon(
-                        onPressed: () => _showAddFollowUpForm(context, enquiry),
-                        icon: const Icon(Icons.add_comment_outlined, size: 18),
-                        label: const Text('Follow-up'),
-                        style: FilledButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ),
             ),
           ),

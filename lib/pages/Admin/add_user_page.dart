@@ -1,12 +1,14 @@
 import 'package:dreamvision/services/admin_user.dart';
 import 'package:dreamvision/widgets/back_button.dart';
-import 'package:dreamvision/widgets/ui_helpers.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../widgets/password_display_dialog.dart';
+import '../../models/user_model.dart';
+import 'package:logger/logger.dart';
 
 class AddUserPage extends StatefulWidget {
-  const AddUserPage({super.key});
+  final User? user;
+  const AddUserPage({super.key, this.user});
 
   @override
   State<AddUserPage> createState() => _AddUserPageState();
@@ -14,6 +16,7 @@ class AddUserPage extends StatefulWidget {
 
 class _AddUserPageState extends State<AddUserPage> {
   final _formKey = GlobalKey<FormState>();
+  Logger logger = Logger();
   final _adminUserService = AdminUserService();
   bool _isSubmitting = false;
 
@@ -26,6 +29,25 @@ class _AddUserPageState extends State<AddUserPage> {
   final _addressController = TextEditingController();
 
   String? _selectedRole;
+
+  bool get isEditMode => widget.user != null;
+
+  @override
+  void initState() {
+    super.initState();
+    if (isEditMode) _prefillFromUser(widget.user!);
+  }
+
+  void _prefillFromUser(User user) {
+    _firstNameController.text = user.firstName;
+    _lastNameController.text = user.lastName;
+    _usernameController.text = user.username;
+    _emailController.text = user.email;
+    _staffIdController.text = user.staffId;
+    _phoneController.text = user.phoneNumber;
+    _addressController.text = user.address;
+    _selectedRole = user.role;
+  }
 
   @override
   void dispose() {
@@ -41,36 +63,45 @@ class _AddUserPageState extends State<AddUserPage> {
 
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate() || _isSubmitting) return;
-
-    // 1. Start Loading
     setState(() => _isSubmitting = true);
 
     final userData = {
-      'first_name': _firstNameController.text.trim(),
-      'last_name': _lastNameController.text.trim(),
-      'username': _usernameController.text.trim(),
-      'email': _emailController.text.trim(),
-      'staff_id': _staffIdController.text.trim(),
-      'phone_number': _phoneController.text.trim(),
-      'address': _addressController.text.trim(),
-      'role': _selectedRole!,
+      "user": {
+        "first_name": _firstNameController.text.trim(),
+        "last_name": _lastNameController.text.trim(),
+        "email": _emailController.text.trim(),
+      },
+      "staff_id": _staffIdController.text.trim(),
+      "phone_number": _phoneController.text.trim(),
+      "address": _addressController.text.trim(),
+      "role": _selectedRole,
     };
 
-    // We need to capture the response here to use it in onSuccess
-    Map<String, dynamic>? response;
+    try {
+      if (isEditMode) {
+        logger.d(widget.user!.toJson());
+        await _adminUserService.updateUser(widget.user!.userId, userData);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('User updated successfully'), backgroundColor: Colors.green),
+          );
+          context.pop(true);
+        }
+      } else {
+        final createData = {
+          "username": _usernameController.text.trim(),
+          "email": _emailController.text.trim(),
+          "first_name": _firstNameController.text.trim(),
+          "last_name": _lastNameController.text.trim(),
+          "staff_id": _staffIdController.text.trim(),
+          "phone_number": _phoneController.text.trim(),
+          "address": _addressController.text.trim(),
+          "role": _selectedRole,
+        };
 
-    // 2. Use the Safe API Call wrapper
-    await context.safeApiCall(
-      () async {
-        // The risky operation
-        response = await _adminUserService.addUser(userData);
-      },
-      onSuccess: () async {
-        // This only runs if the API call didn't throw an error
-        if (response != null && mounted) {
-          final initialPassword =
-              response!['initial_password'] ?? 'Not provided';
-
+        final response = await _adminUserService.addUser(createData);
+        final initialPassword = response['initial_password'] ?? 'Not provided';
+        if (mounted) {
           await showDialog(
             context: context,
             barrierDismissible: false,
@@ -80,14 +111,64 @@ class _AddUserPageState extends State<AddUserPage> {
               password: initialPassword,
             ),
           );
-
-          if (mounted) context.pop(true); // Return true to refresh list
+          // ignore: use_build_context_synchronously
+          context.pop(true);
         }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Operation failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _resetPassword() async {
+    if (!isEditMode) return;
+    final user = widget.user!;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Reset Password'),
+          content: Text('Reset password for ${user.name}?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Reset')),
+          ],
+        );
       },
     );
 
-    // 3. Stop Loading (runs regardless of success or failure)
-    if (mounted) setState(() => _isSubmitting = false);
+    if (confirm != true) return;
+
+    setState(() => _isSubmitting = true);
+    try {
+      final response = await _adminUserService.resetPassword(user.userId);
+      final newPassword = response['new_password'] ?? 'Not provided';
+      if (mounted) {
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => PasswordDisplayDialog(
+            title: "Password Reset Successful",
+            username: user.username,
+            password: newPassword,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to reset password: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
   }
 
   @override
@@ -101,11 +182,20 @@ class _AddUserPageState extends State<AddUserPage> {
         surfaceTintColor: Colors.transparent,
         backgroundColor: cs.surface,
         leading: const BackButtonIos(),
-        title: const Text(
-          'Create User Profile',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        title: Text(
+          isEditMode ? 'Edit User' : 'Create User Profile',
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         actions: [
+          if (isEditMode)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: TextButton.icon(
+                onPressed: _isSubmitting ? null : _resetPassword,
+                icon: const Icon(Icons.lock_reset_outlined),
+                label: const Text('Reset Password'),
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.only(right: 10),
             child: TextButton(
@@ -114,12 +204,9 @@ class _AddUserPageState extends State<AddUserPage> {
                   ? SizedBox(
                       height: 18,
                       width: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: cs.primary,
-                      ),
+                      child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary),
                     )
-                  : const Text('Save'),
+                  : Text(isEditMode ? 'Update' : 'Save'),
             ),
           ),
         ],
@@ -130,33 +217,21 @@ class _AddUserPageState extends State<AddUserPage> {
           key: _formKey,
           child: Card(
             elevation: 0,
-            color: cs.surfaceContainerLow, // Better for Dark Mode
+            color: cs.surfaceContainerLow,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
-              side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.4)),
+              side: BorderSide(color: cs.outlineVariant.withAlpha(80)),
             ),
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Theme(
                 data: theme.copyWith(
                   inputDecorationTheme: InputDecorationTheme(
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide.none,
-                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                     filled: true,
-                    // Standard M3 input fill
-                    fillColor: cs.surfaceContainerHighest.withValues(
-                      alpha: 0.3,
-                    ),
-                    labelStyle: TextStyle(
-                      fontSize: 14,
-                      color: cs.onSurfaceVariant,
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
+                    fillColor: cs.surfaceContainerHighest.withAlpha(40),
+                    labelStyle: TextStyle(fontSize: 14, color: cs.onSurfaceVariant),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   ),
                 ),
                 child: Column(
@@ -165,9 +240,7 @@ class _AddUserPageState extends State<AddUserPage> {
                     const _SectionHeader(title: 'User Details'),
                     TextFormField(
                       controller: _firstNameController,
-                      decoration: const InputDecoration(
-                        labelText: 'First Name',
-                      ),
+                      decoration: const InputDecoration(labelText: 'First Name'),
                       validator: (v) => v!.isEmpty ? 'Enter first name' : null,
                     ),
                     const SizedBox(height: 14),
@@ -182,6 +255,7 @@ class _AddUserPageState extends State<AddUserPage> {
                       controller: _usernameController,
                       decoration: const InputDecoration(labelText: 'Username'),
                       validator: (v) => v!.isEmpty ? 'Enter username' : null,
+                      enabled: !isEditMode,
                     ),
                     const SizedBox(height: 14),
                     TextFormField(
@@ -189,15 +263,9 @@ class _AddUserPageState extends State<AddUserPage> {
                       decoration: const InputDecoration(labelText: 'Email'),
                       keyboardType: TextInputType.emailAddress,
                       validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Enter email';
-                        }
-                        final emailRegex = RegExp(
-                          r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
-                        );
-                        return emailRegex.hasMatch(value)
-                            ? null
-                            : 'Enter a valid email';
+                        if (value == null || value.isEmpty) return 'Enter email';
+                        final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+                        return emailRegex.hasMatch(value) ? null : 'Enter a valid email';
                       },
                     ),
                     const SizedBox(height: 26),
@@ -210,69 +278,38 @@ class _AddUserPageState extends State<AddUserPage> {
                     const SizedBox(height: 14),
                     TextFormField(
                       controller: _phoneController,
-                      decoration: const InputDecoration(
-                        labelText: 'Phone Number',
-                      ),
+                      decoration: const InputDecoration(labelText: 'Phone Number'),
                       keyboardType: TextInputType.phone,
                       validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Enter phone number';
-                        }
-                        return RegExp(r'^[0-9]{10}$').hasMatch(value)
-                            ? null
-                            : 'Phone must be 10 digits';
+                        if (value == null || value.isEmpty) return 'Enter phone number';
+                        return RegExp(r'^[0-9]{10}$').hasMatch(value) ? null : 'Phone must be 10 digits';
                       },
                     ),
                     const SizedBox(height: 14),
                     DropdownButtonFormField<String>(
                       decoration: const InputDecoration(labelText: 'Role'),
                       items: ['Admin', 'Counsellor', 'Telecaller']
-                          .map(
-                            (role) => DropdownMenuItem(
-                              value: role,
-                              child: Text(role),
-                            ),
-                          )
+                          .map((role) => DropdownMenuItem(value: role, child: Text(role)))
                           .toList(),
-                      onChanged: (value) =>
-                          setState(() => _selectedRole = value),
-                      validator: (value) =>
-                          value == null ? 'Select a role' : null,
+                      initialValue: _selectedRole,
+                      onChanged: (value) => setState(() => _selectedRole = value),
+                      validator: (value) => value == null ? 'Select a role' : null,
                     ),
                     const SizedBox(height: 26),
                     const _SectionHeader(title: 'Contact Details'),
                     TextFormField(
                       controller: _addressController,
                       maxLines: 3,
-                      decoration: const InputDecoration(
-                        labelText: 'Address',
-                        alignLabelWithHint: true,
-                      ),
-                      validator: (v) =>
-                          v!.isEmpty ? 'Enter full address' : null,
+                      decoration: const InputDecoration(labelText: 'Address', alignLabelWithHint: true),
+                      validator: (v) => v!.isEmpty ? 'Enter full address' : null,
                     ),
                     const SizedBox(height: 32),
                     FilledButton(
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 50),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
+                      style: FilledButton.styleFrom(minimumSize: const Size(double.infinity, 50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                       onPressed: _isSubmitting ? null : _submitForm,
                       child: _isSubmitting
-                          ? SizedBox(
-                              height: 24,
-                              width: 24,
-                              child: CircularProgressIndicator(
-                                color: cs.onPrimary,
-                                strokeWidth: 3,
-                              ),
-                            )
-                          : const Text(
-                              'Create User',
-                              style: TextStyle(fontSize: 16),
-                            ),
+                          ? SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: cs.onPrimary, strokeWidth: 3))
+                          : Text(isEditMode ? 'Update User' : 'Create User', style: const TextStyle(fontSize: 16)),
                     ),
                   ],
                 ),
@@ -293,14 +330,7 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontWeight: FontWeight.w700,
-          fontSize: 17,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      ),
+      child: Text(title, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17, color: Theme.of(context).colorScheme.primary)),
     );
   }
 }

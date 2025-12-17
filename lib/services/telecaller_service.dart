@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:dreamvision/config/constants.dart';
+import 'package:dreamvision/utils/global_error_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
@@ -18,7 +19,6 @@ class TelecallerService {
       BaseOptions(
         baseUrl: _baseUrl,
         headers: {'Content-Type': 'application/json'},
-        // Add timeouts
         connectTimeout: const Duration(seconds: 10),
         receiveTimeout: const Duration(seconds: 10),
       ),
@@ -49,7 +49,7 @@ class TelecallerService {
   }
 
   // ---------------------------------------------------------------------------
-  // UPDATED ERROR HANDLER
+  // UPDATED GLOBAL ERROR HANDLER (MATCHING AuthService & EnquiryService)
   // ---------------------------------------------------------------------------
   String _handleDioError(DioException e) {
     _logger.e(
@@ -58,7 +58,7 @@ class TelecallerService {
       stackTrace: e.stackTrace,
     );
 
-    // 1. Handle Network/Connection Issues
+    // 🔥 1. Network issues
     if (e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.sendTimeout ||
         e.type == DioExceptionType.receiveTimeout) {
@@ -68,17 +68,17 @@ class TelecallerService {
       return 'No internet connection. Please check your network.';
     }
 
-    // 2. Handle Server Responses
+    // 🔥 2. Server response issues
     if (e.response != null) {
       final int statusCode = e.response!.statusCode ?? 0;
       final dynamic data = e.response!.data;
 
-      // A. Server Error (500+): Hide raw code, show generic message
+      // 500 errors → generic message
       if (statusCode >= 500) {
         return 'Server error ($statusCode). Please try again later.';
       }
 
-      // B. HTML Response Check (Fixes the IntegrityError HTML screen)
+      // HTML response check
       if (data is String) {
         if (data.toLowerCase().contains('<!doctype html>') ||
             data.toLowerCase().contains('<html')) {
@@ -87,28 +87,26 @@ class TelecallerService {
         return data;
       }
 
-      // C. Client Error (400-499): Extract specific validation message
+      // Django/DRF JSON validation messages
       if (data is Map) {
-        // Common Django/DRF keys
         if (data['detail'] != null) return data['detail'].toString();
         if (data['message'] != null) return data['message'].toString();
         if (data['error'] != null) return data['error'].toString();
         if (data['non_field_errors'] != null) {
-           return (data['non_field_errors'] as List).join('\n');
+          return (data['non_field_errors'] as List).join('\n');
         }
 
-        // Field-specific errors (e.g., { "username": ["Already exists"] })
+        // Field errors
         if (data.isNotEmpty) {
-          final firstKey = data.keys.first;
-          final firstValue = data[firstKey];
-          
-          // Format the key (e.g., phone_number -> Phone number)
-          final formattedKey = firstKey.toString().replaceAll('_', ' ').capitalize();
+          final key = data.keys.first;
+          final val = data[key];
 
-          if (firstValue is List) {
-            return "$formattedKey: ${firstValue.first}";
+          final formattedKey = key.toString().replaceAll('_', ' ').capitalize();
+
+          if (val is List) {
+            return "$formattedKey: ${val.first}";
           }
-          return "$formattedKey: $firstValue";
+          return "$formattedKey: $val";
         }
       }
     }
@@ -141,9 +139,11 @@ class TelecallerService {
 
       return [];
     } catch (e) {
-      throw Exception(
-        e is DioException ? _handleDioError(e) : e.toString(),
-      );
+      /// 🔥 SHOW GLOBAL SNACKBAR
+      final msg = e is DioException ? _handleDioError(e) : e.toString();
+      GlobalErrorHandler.showError(msg);
+
+      throw Exception(msg);
     }
   }
 }

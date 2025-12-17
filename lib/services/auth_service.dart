@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:dreamvision/config/constants.dart';
+import 'package:dreamvision/utils/global_error_handler.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:logger/logger.dart';
 
@@ -11,48 +12,49 @@ class AuthService {
   late Dio _dio;
 
   AuthService() {
-    _dio = Dio(BaseOptions(
-      baseUrl: _baseUrl,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      // Add timeouts to prevent infinite hanging
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 10),
-    ));
+    logger.i('Initializing AuthService');
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: _baseUrl,
+        headers: {'Content-Type': 'application/json'},
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+      ),
+    );
 
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          logger.i('Outgoing Request → ${options.method} ${options.uri}');
           if (!options.path.contains('/login') &&
               !options.path.contains('/register') &&
               !options.path.contains('/token/refresh')) {
             String? token = await getAccessToken();
             if (token != null) {
+              logger.i('Adding Authorization header');
               options.headers['Authorization'] = 'Bearer $token';
+            } else {
+              logger.w('No access token found');
             }
           }
           return handler.next(options);
         },
         onError: (DioException e, handler) async {
+          logger.e('Request Error → ${e.requestOptions.path}');
           if (e.response?.statusCode == 401) {
-            // If the failed request was ALREADY a refresh attempt, fail immediately
             if (e.requestOptions.path.contains('/token/refresh')) {
-              logger.e('Refresh token failed, logging out.');
+              logger.e('Refresh token invalid. Logging out.');
               await logout();
               return handler.next(e);
             }
 
-            logger.i('Access token expired. Refreshing token...');
+            logger.w('Access token expired. Requesting refresh...');
             try {
               final newAccessToken = await refreshToken();
-
               if (newAccessToken != null) {
-                logger.i('Retrying request with new token...');
+                logger.i('Retrying failed request with refreshed token');
                 final opts = e.requestOptions;
                 opts.headers['Authorization'] = 'Bearer $newAccessToken';
-
-                // Retry the request
                 final response = await _dio.fetch(opts);
                 return handler.resolve(response);
               }
@@ -68,11 +70,11 @@ class AuthService {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // ROBUST ERROR HANDLER
-  // ---------------------------------------------------------------------------
-  String _handleDioError(DioException e, [String defaultError = 'An unknown error occurred.']) {
-    // 1. Network/Connection Errors
+  String _handleDioError(
+    DioException e, [
+    String defaultError = 'An unknown error occurred.',
+  ]) {
+    logger.e('Handling Dio Error → ${e.message}');
     if (e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.sendTimeout ||
         e.type == DioExceptionType.receiveTimeout) {
@@ -82,129 +84,123 @@ class AuthService {
       return 'No internet connection. Please check your network.';
     }
 
-    // 2. Server Response Errors
     if (e.response != null) {
       final int statusCode = e.response!.statusCode ?? 0;
-      final dynamic data = e.response!.data;
+      final data = e.response!.data;
+      logger.e('Server Response Error ($statusCode) → $data');
 
-      // A. Server Error (500+): Hide details, show generic message
       if (statusCode >= 500) {
         return 'Server error ($statusCode). Please try again later.';
       }
 
-      // B. HTML Response Check (Fixes the IntegrityError HTML screen)
       if (data is String) {
-        if (data.toLowerCase().contains('<!doctype html>') ||
-            data.toLowerCase().contains('<html')) {
+        if (data.toLowerCase().contains('<html')) {
           return 'Server returned an invalid response.';
         }
-        return data; // Return plain string if it's not HTML
+        return data;
       }
 
-      // C. Client Error (400-499): Extract validation messages
       if (data is Map) {
-        // Common Django/DRF keys
         if (data['detail'] != null) return data['detail'].toString();
         if (data['message'] != null) return data['message'].toString();
         if (data['error'] != null) return data['error'].toString();
         if (data['non_field_errors'] != null) {
-           return (data['non_field_errors'] as List).join('\n');
+          return (data['non_field_errors'] as List).join('\n');
         }
 
-        // Field-specific errors (e.g., { "username": ["Already exists"] })
         if (data.isNotEmpty) {
-          final firstKey = data.keys.first;
-          final firstValue = data[firstKey];
-          
-          // Format the key (e.g., phone_number -> Phone number)
-          final formattedKey = firstKey.toString().replaceAll('_', ' ').capitalize();
-
-          if (firstValue is List) {
-            return "$formattedKey: ${firstValue.first}";
-          }
-          return "$formattedKey: $firstValue";
+          final key = data.keys.first;
+          final value = data[key];
+          final formattedKey = key.toString().replaceAll('_', ' ').capitalize();
+          if (value is List) return "$formattedKey: ${value.first}";
+          return "$formattedKey: $value";
         }
       }
     }
 
     return defaultError;
   }
-  // ---------------------------------------------------------------------------
 
   Future<void> _storeTokens(Map<String, dynamic> tokens) async {
+    logger.i('Storing tokens');
     await _storage.write(key: 'access_token', value: tokens['access']);
     await _storage.write(key: 'refresh_token', value: tokens['refresh']);
   }
 
   Future<String?> getAccessToken() async {
+    logger.i('Fetching access token from storage');
     return await _storage.read(key: 'access_token');
   }
 
   Future<void> logout() async {
+    logger.w('Logging out user. Clearing tokens.');
     await _storage.delete(key: 'access_token');
     await _storage.delete(key: 'refresh_token');
   }
 
   Future<Map<String, dynamic>> login(String username, String password) async {
+    logger.i('Attempting login for user: $username');
     try {
       final response = await _dio.post(
         '/users/login/',
-        data: {
-          'username': username,
-          'password': password,
-        },
+        data: {'username': username, 'password': password},
       );
 
-      // Safety check: Ensure data is actually a Map
       if (response.data is! Map<String, dynamic>) {
-         throw Exception("Invalid server response format.");
+        final msg = "Invalid server response format.";
+        logger.e(msg);
+        GlobalErrorHandler.showError(msg);
+        throw Exception(msg);
       }
 
-      final responseBody = response.data as Map<String, dynamic>;
+      final responseBody = response.data;
+      logger.i('Login successful: $responseBody');
 
-      if (response.statusCode == 200) {
-        logger.d(responseBody);
-        await _storeTokens(responseBody);
-        return responseBody;
-      } else {
-        throw Exception('Failed to login.');
-      }
+      await _storeTokens(responseBody);
+      return responseBody;
     } catch (e) {
-      String errorMessage = (e is DioException)
+      final errorMessage = (e is DioException)
           ? _handleDioError(e, 'Failed to login.')
           : e.toString();
-      logger.e(errorMessage);
+      logger.e('Login error → $errorMessage');
+      GlobalErrorHandler.showError(errorMessage);
       throw Exception(errorMessage);
     }
   }
+
   Future<Map<String, dynamic>> getUserProfile() async {
+    logger.i('Fetching user profile');
     try {
-      // Token is added by Interceptor
       final response = await _dio.get('/users/profile/');
+      logger.i('Profile loaded → ${response.data}');
       return response.data;
     } catch (e) {
-      String errorMessage = (e is DioException)
+      final msg = (e is DioException)
           ? _handleDioError(e, 'Failed to load user profile.')
           : e.toString();
-      logger.e(errorMessage);
-      throw Exception(errorMessage);
+      logger.e('Profile fetch error → $msg');
+      GlobalErrorHandler.showError(msg);
+      throw Exception(msg);
     }
   }
 
   Future<String?> refreshToken() async {
     final refreshToken = await _storage.read(key: 'refresh_token');
+    logger.i('Attempting token refresh');
+
     if (refreshToken == null) {
+      logger.w('No refresh token found');
       await logout();
       throw Exception('User not authenticated.');
     }
 
     try {
-      // We create a new dio instance here to avoid infinite loops 
-      // or interceptor conflicts during refresh
-      final refreshDio = Dio(BaseOptions(
-        baseUrl: _baseUrl,
-        headers: {'Content-Type': 'application/json'},
-      ));
+      final refreshDio = Dio(
+        BaseOptions(
+          baseUrl: _baseUrl,
+          headers: {'Content-Type': 'application/json'},
+        ),
+      );
 
       final response = await refreshDio.post(
         '/users/token/refresh/',
@@ -212,17 +208,20 @@ class AuthService {
       );
 
       if (response.statusCode == 200) {
+        logger.i('Token refreshed successfully');
         final newTokens = response.data;
         await _storage.write(key: 'access_token', value: newTokens['access']);
         return newTokens['access'];
       } else {
+        logger.e('Refresh token invalid');
         await logout();
-        throw Exception('Session expired. Please login again.');
+        GlobalErrorHandler.showError('Session expired. Please login again.');
+        throw Exception('Session expired.');
       }
     } catch (e) {
+      logger.e('Refresh token error → $e');
       await logout();
-      // We generally don't show UI for refresh failure, just log out
-      logger.e('Refresh failed: $e');
+      GlobalErrorHandler.showError('Session expired. Please login again.');
       return null;
     }
   }
@@ -235,6 +234,7 @@ class AuthService {
     required String lastName,
     required String role,
   }) async {
+    logger.i('Signing up user: $username');
     try {
       await _dio.post(
         '/users/register/',
@@ -248,17 +248,23 @@ class AuthService {
           'role': role,
         },
       );
+      logger.i('Signup successful');
     } catch (e) {
-      String errorMessage = (e is DioException)
+      final msg = (e is DioException)
           ? _handleDioError(e, 'Failed to sign up.')
           : e.toString();
-      logger.e(errorMessage);
-      throw Exception(errorMessage);
+      logger.e('Signup error → $msg');
+      GlobalErrorHandler.showError(msg);
+      throw Exception(msg);
     }
   }
 
   Future<void> changePassword(
-      String oldPassword, String newPassword1, String newPassword2) async {
+    String oldPassword,
+    String newPassword1,
+    String newPassword2,
+  ) async {
+    logger.i('Changing password');
     try {
       await _dio.put(
         '/users/profile/change-password/',
@@ -268,12 +274,14 @@ class AuthService {
           'new_password2': newPassword2,
         },
       );
+      logger.i('Password changed successfully');
     } catch (e) {
-      String errorMessage = (e is DioException)
+      final msg = (e is DioException)
           ? _handleDioError(e, 'Failed to change password.')
           : e.toString();
-      logger.e(errorMessage);
-      throw Exception(errorMessage);
+      logger.e('Password change error → $msg');
+      GlobalErrorHandler.showError(msg);
+      throw Exception(msg);
     }
   }
 }

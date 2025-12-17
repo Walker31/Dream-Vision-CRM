@@ -9,8 +9,15 @@ enum EnquiryListType { unassigned, assigned }
 
 class PaginatedEnquiryList extends StatefulWidget {
   final EnquiryListType type;
+  final String? initialStandard;
+  final String? initialStatus;
 
-  const PaginatedEnquiryList({super.key, required this.type});
+  const PaginatedEnquiryList({
+    super.key,
+    required this.type,
+    this.initialStandard,
+    this.initialStatus,
+  });
 
   @override
   State<PaginatedEnquiryList> createState() => PaginatedEnquiryListState();
@@ -29,9 +36,14 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
   String? _searchQuery;
   Timer? _debounce;
 
+  String? _standardFilter;
+  String? _statusFilter;
+
   @override
   void initState() {
     super.initState();
+    _standardFilter = widget.initialStandard;
+    _statusFilter = widget.initialStatus;
     _fetchPage(1);
     _scrollController.addListener(_onScroll);
   }
@@ -50,53 +62,75 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
       return;
     }
     if (_isLoading || !_hasNextPage) return;
-
     _fetchPage(_currentPage + 1);
   }
 
   Future<void> _fetchPage(int page) async {
     if (_isLoading) return;
+
     setState(() {
       _isLoading = true;
       if (page == 1) _isFirstLoad = true;
     });
 
     try {
-      final Map<String, dynamic> response;
+      // 1. Use 'dynamic' here so we don't crash if it's a List or Map
+      final dynamic response;
+
       if (widget.type == EnquiryListType.unassigned) {
         response = await _enquiryService.getUnassignedEnquiries(
           page: page,
           query: _searchQuery,
+          standard: _standardFilter,
+          status: _statusFilter,
         );
       } else {
         response = await _enquiryService.getAssignedEnquiries(
           page: page,
           query: _searchQuery,
+          standard: _standardFilter,
+          status: _statusFilter,
         );
       }
 
-      final List<dynamic> resultsData = response['results'] ?? [];
-      final newEnquiries = resultsData
-          .map((data) => Enquiry.fromJson(data))
+      // 2. Safe parsing: Handle both Map (paginated) and List (direct)
+      final List<dynamic> resultsList;
+      bool hasNext = false;
+
+      if (response is Map<String, dynamic>) {
+        // It's a paginated response
+        resultsList = response['results'] ?? [];
+        hasNext = response['next'] != null;
+      } else if (response is List) {
+        // It's a direct list
+        resultsList = response;
+        hasNext =
+            false; // Direct lists usually don't support pagination this way
+      } else {
+        resultsList = [];
+      }
+
+      final newEnquiries = resultsList
+          .map<Enquiry>((e) => Enquiry.fromJson(e))
           .toList();
 
-      if (mounted) {
-        setState(() {
-          if (page == 1) {
-            _enquiries = newEnquiries;
-          } else {
-            _enquiries.addAll(newEnquiries);
-          }
-          _currentPage = page;
-          _hasNextPage = response['next'] != null;
-        });
-      }
+      if (!mounted) return;
+
+      setState(() {
+        if (page == 1) {
+          _enquiries = newEnquiries;
+        } else {
+          _enquiries.addAll(newEnquiries);
+        }
+        _currentPage = page;
+        _hasNextPage = hasNext;
+      });
     } catch (e) {
-      _logger.e("Failed to fetch ${widget.type} enquiries: $e");
+      _logger.e("Failed to fetch enquiries: $e");
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error: $e")));
       }
     } finally {
       if (mounted) {
@@ -113,8 +147,15 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
     await _fetchPage(1);
   }
 
+  void refreshWithFilters(String? standard, String? status) {
+    _standardFilter = standard;
+    _statusFilter = status;
+    _searchQuery = null;
+    _fetchPage(1);
+  }
+
   void _onSearchChanged(String query) {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 500), () {
       if (_searchQuery != query) {
         _searchQuery = query;
@@ -123,41 +164,38 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
     });
   }
 
-  // Updated to return a Record (Background Color, Text Color)
-  ({Color bg, Color text}) _getStatusColors(BuildContext context, String status) {
+  ({Color bg, Color text}) _getStatusColors(
+    BuildContext context,
+    String status,
+  ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
-    // Helper for base colors
-    Color baseColor;
+    Color base;
+
     switch (status.toLowerCase()) {
       case 'interested':
-        baseColor = Colors.blue;
+        base = Colors.blue;
         break;
       case 'converted':
-        baseColor = Colors.green;
+        base = Colors.green;
         break;
-      case 'needs follow-up':
       case 'follow-up':
-        baseColor = Colors.orange;
+      case 'needs follow-up':
+        base = Colors.orange;
         break;
       case 'closed':
-        baseColor = Colors.grey;
+        base = Colors.grey;
         break;
       default:
-        baseColor = Colors.purple;
+        base = Colors.purple;
     }
 
     if (isDark) {
-      // Dark Mode: Dark background, light text
       return (
-        bg: baseColor.withValues(alpha: 0.2), 
-        text: baseColor.withValues(alpha: 0.9) // Slightly lighter shade logic handled by Flutter usually, but using alpha is safer
+        bg: base.withValues(alpha: 0.2),
+        text: base.withValues(alpha: 0.9),
       );
     } else {
-      // Light Mode: Light background, dark text (Standard Chip style)
-      // Or Solid background, White text (Your previous style)
-      // Let's stick to Solid for Light mode as it pops more
-      return (bg: baseColor.withValues(alpha: 0.8), text: Colors.white);
+      return (bg: base.withValues(alpha: 0.85), text: Colors.white);
     }
   }
 
@@ -168,91 +206,107 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 12.0),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
           child: TextField(
             onChanged: _onSearchChanged,
             decoration: InputDecoration(
               hintText: 'Search in ${widget.type.name}...',
-              hintStyle: TextStyle(color: cs.onSurfaceVariant),
               prefixIcon: Icon(Icons.search, color: cs.onSurfaceVariant),
               filled: true,
               fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.3),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12.0),
-                borderSide: BorderSide.none, // Cleaner look
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12.0),
-                borderSide: BorderSide(color: cs.outline.withValues(alpha: 0.2)),
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: cs.outline.withValues(alpha: 0.2),
+                ),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12.0),
+                borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(color: cs.primary, width: 1.5),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16.0),
             ),
           ),
         ),
+
+        // INITIAL LOADING VIEW
         if (_isFirstLoad && _isLoading)
           const Expanded(child: Center(child: CircularProgressIndicator()))
+        // EMPTY VIEW
         else if (_enquiries.isEmpty && !_isLoading)
           Expanded(
             child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.search_off_outlined, size: 48, color: cs.outline),
-                  const SizedBox(height: 16),
-                  Text(
-                    _searchQuery != null && _searchQuery!.isNotEmpty
-                        ? 'No enquiries found for "$_searchQuery".'
-                        : 'No ${widget.type.name} enquiries found.',
-                    style: TextStyle(color: cs.onSurfaceVariant, fontSize: 16),
-                  ),
-                ],
+              child: SingleChildScrollView(
+                physics: const NeverScrollableScrollPhysics(),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.search_off_outlined,
+                      size: 48,
+                      color: cs.outline,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      _searchQuery != null && _searchQuery!.isNotEmpty
+                          ? 'No enquiries found for "$_searchQuery".'
+                          : 'No ${widget.type.name} enquiries found.',
+                      style: TextStyle(
+                        color: cs.onSurfaceVariant,
+                        fontSize: 16,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
               ),
             ),
           )
+        // LIST VIEW
         else
           Expanded(
             child: ListView.separated(
               controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 16.0),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               itemCount: _enquiries.length + (_hasNextPage ? 1 : 0),
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
                 if (index == _enquiries.length) {
-                  return _hasNextPage
-                      ? const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 16.0),
-                          child: Center(child: CircularProgressIndicator()),
-                        )
-                      : const SizedBox.shrink();
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
                 }
 
                 final enquiry = _enquiries[index];
                 final fullName =
-                    '${enquiry.firstName} ${enquiry.lastName ?? ''}'.trim();
-                final status = enquiry.currentStatusName ?? 'Unknown';
+                    "${enquiry.firstName} ${enquiry.lastName ?? ''}".trim();
+                final status = enquiry.currentStatusName ?? "Unknown";
                 final statusColors = _getStatusColors(context, status);
 
                 return Card(
-                  margin: EdgeInsets.zero,
+                  color: cs.surfaceContainerLow,
                   elevation: 0,
-                  color: cs.surfaceContainerLow, // Slightly distinct from background
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.4)),
+                    side: BorderSide(
+                      color: cs.outlineVariant.withValues(alpha: 0.4),
+                    ),
                   ),
                   child: InkWell(
-                    onTap: () => context.push('/enquiry/${enquiry.id}'),
                     borderRadius: BorderRadius.circular(12),
+                    onTap: () => context.push("/enquiry/${enquiry.id}"),
                     child: Padding(
-                      padding: const EdgeInsets.all(12.0),
+                      padding: const EdgeInsets.all(12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // NAME + STATUS
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
                               Expanded(
                                 child: Text(
@@ -265,10 +319,10 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              // Status Chip
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4
+                                  horizontal: 8,
+                                  vertical: 4,
                                 ),
                                 decoration: BoxDecoration(
                                   color: statusColors.bg,
@@ -285,39 +339,53 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
                               ),
                             ],
                           ),
+
                           const SizedBox(height: 8),
+
+                          // PHONE + ACTION BUTTON
                           Row(
                             children: [
-                              Icon(Icons.phone_outlined, 
-                                size: 16, color: cs.onSurfaceVariant),
+                              Icon(
+                                Icons.phone_outlined,
+                                size: 16,
+                                color: cs.onSurfaceVariant,
+                              ),
                               const SizedBox(width: 6),
-                              Text(
-                                enquiry.phoneNumber,
-                                style: TextStyle(
-                                  color: cs.onSurfaceVariant,
-                                  fontSize: 13
+
+                              // Phone text must be inside Expanded
+                              Expanded(
+                                child: Text(
+                                  enquiry.phoneNumber.trim().isNotEmpty
+                                      ? enquiry.phoneNumber
+                                      : (enquiry.fatherPhoneNumber ??
+                                            "No number"),
+                                  style: TextStyle(
+                                    color: cs.onSurfaceVariant,
+                                    fontSize: 13,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              const Spacer(),
-                              // History Button
-                              SizedBox(
-                                width: 32,
-                                height: 32,
-                                child: IconButton(
-                                  padding: EdgeInsets.zero,
-                                  icon: Icon(
-                                    Icons.history,
-                                    color: cs.primary,
-                                    size: 20,
-                                  ),
-                                  tooltip: 'View Follow-ups',
-                                  onPressed: () {
-                                    context.push(
-                                      '/follow-ups/${enquiry.id}',
-                                      extra: fullName,
-                                    );
-                                  },
+
+                              // Follow-ups icon button
+                              IconButton(
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: 32,
+                                  minHeight: 32,
                                 ),
+                                icon: Icon(
+                                  Icons.history,
+                                  color: cs.primary,
+                                  size: 20,
+                                ),
+                                tooltip: "View Follow-ups",
+                                onPressed: () {
+                                  context.push(
+                                    '/follow-ups/${enquiry.id}',
+                                    extra: fullName,
+                                  );
+                                },
                               ),
                             ],
                           ),
@@ -327,7 +395,6 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
                   ),
                 );
               },
-              separatorBuilder: (context, index) => const SizedBox(height: 12),
             ),
           ),
       ],

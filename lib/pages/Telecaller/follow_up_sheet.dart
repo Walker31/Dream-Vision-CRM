@@ -1,9 +1,13 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:logger/logger.dart';
-import '../../services/enquiry_service.dart';
+
 import '../../models/enquiry_model.dart';
-import '../miscellaneous/follow_up_page.dart'; // for FollowUp model
+import '../../models/follow_up_model.dart';
+import '../../services/enquiry_service.dart';
+import '../../widgets/form_widgets.dart';
 
 class AddFollowUpSheet extends StatefulWidget {
   final Enquiry enquiry;
@@ -19,170 +23,205 @@ class AddFollowUpSheet extends StatefulWidget {
   State<AddFollowUpSheet> createState() => _AddFollowUpSheetState();
 }
 
-class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
+class _AddFollowUpSheetState extends State<AddFollowUpSheet>
+    with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
-  final EnquiryService _enquiryService = EnquiryService();
-  Logger logger = Logger();
-  bool _isLoading = false;
+  final Logger logger = Logger();
 
+  final EnquiryService _service = EnquiryService();
+
+  bool _isLoading = false;
   bool _isCnr = false;
+
+  // Academic fields
   String? _standard;
   String? _board;
-  final Set<String> _selectedExams = {};
   bool? _admissionConfirmed;
-  final _feedbackController = TextEditingController();
+  final Set<String> _selectedExams = {};
 
-  late Future<List<dynamic>> _statusFuture;
+  final TextEditingController _remarksController = TextEditingController();
+
+  // Status items
   List<dynamic> _statuses = [];
   int? _selectedStatusId;
-  bool _isStatusInitialized = false;
+  bool _isStatusLoaded = false;
 
   DateTime? _nextFollowUpDate;
+
+  late AnimationController _animController;
+  late Animation<double> _fadeAnimation;
 
   @override
   void initState() {
     super.initState();
-    _standard = widget.enquiry.enquiringForStandard;
-    _board = widget.enquiry.enquiringForBoard;
-    _admissionConfirmed = widget.enquiry.isAdmissionConfirmed;
-    _initializeStatus();
+
+    _animController = AnimationController(
+      duration: const Duration(milliseconds: 250),
+      vsync: this,
+    );
+
+    _fadeAnimation = CurvedAnimation(
+      parent: _animController,
+      curve: Curves.easeInOut,
+    );
+
+    _loadInitialValues();
+    _loadStatuses();
   }
 
-  Future<void> _initializeStatus() async {
+  void _loadInitialValues() {
+    if (widget.existingFollowUp == null) {
+      _standard = widget.enquiry.enquiringForStandard;
+      _board = widget.enquiry.enquiringForBoard;
+      _admissionConfirmed = widget.enquiry.isAdmissionConfirmed;
+      return;
+    }
+
+    final f = widget.existingFollowUp!;
+
+    _remarksController.text = f.remarks;
+    _isCnr = f.cnr;
+
+    if (f.nextFollowUpDate != null) {
+      try {
+        _nextFollowUpDate = DateTime.parse(f.nextFollowUpDate!);
+      } catch (_) {}
+    }
+
+    final acad = f.academicDetailsDiscussed;
+    _standard = acad['standard'];
+    _board = acad['board'];
+    _admissionConfirmed = acad['admission_confirmed'];
+
+    if (acad['exams'] is List) {
+      _selectedExams.addAll(List<String>.from(acad['exams']));
+    }
+  }
+
+  Future<void> _loadStatuses() async {
     try {
-      _statusFuture = _enquiryService.getEnquiryStatuses();
-      _statuses = await _statusFuture;
+      _statuses = await _service.getEnquiryStatuses();
 
-      // If editing, prefill after statuses loaded
-      if (widget.existingFollowUp != null) {
-        final f = widget.existingFollowUp!;
-        _feedbackController.text = f.remarks;
-        _isCnr = f.remarks.toLowerCase().contains('cnr');
+      if (widget.existingFollowUp != null &&
+          widget.existingFollowUp!.statusAfterFollowUp != null) {
+        final name = widget.existingFollowUp!.statusAfterFollowUp!
+            .toLowerCase();
 
-        if (f.nextFollowUpDate != null) {
-          try {
-            _nextFollowUpDate = DateTime.parse(f.nextFollowUpDate!);
-          } catch (_) {
-            _nextFollowUpDate = null;
-          }
-        }
+        final match = _statuses.firstWhere(
+          (s) => (s['name'] as String).toLowerCase() == name,
+          orElse: () => null,
+        );
 
-        if (f.statusAfterFollowUp != null) {
-          // statusAfterFollowUp in FollowUp model is a name — try to map to id
-          final matching = _statuses.firstWhere(
-            (s) => (s['name'] as String).toLowerCase() ==
-                f.statusAfterFollowUp!.toLowerCase(),
-            orElse: () => null,
-          );
-          if (matching != null) {
-            _selectedStatusId = matching['id'] as int?;
-          }
+        if (match != null) {
+          _selectedStatusId = match['id'];
         }
       }
     } catch (e) {
-      logger.e('Failed to load statuses: $e');
+      logger.e("Status load error: $e");
     } finally {
       if (mounted) {
-        setState(() {
-          _isStatusInitialized = true;
-        });
+        _isStatusLoaded = true;
+        setState(() {});
       }
     }
   }
 
-  Future<void> _pickNextFollowUpDateTime() async {
-    final pickedDate = await showDatePicker(
+  Future<void> _pickDateTime() async {
+    final d = await showDatePicker(
       context: context,
-      initialDate: _nextFollowUpDate ?? DateTime.now().add(const Duration(days: 7)),
+      initialDate:
+          _nextFollowUpDate ?? DateTime.now().add(const Duration(days: 2)),
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
 
-    if (pickedDate == null) return;
-    if (!mounted) return;
+    if (d == null) return;
 
-    final initialTime = _nextFollowUpDate != null
-        ? TimeOfDay.fromDateTime(_nextFollowUpDate!)
-        : const TimeOfDay(hour: 10, minute: 0);
-
-    final pickedTime = await showTimePicker(
+    final t = await showTimePicker(
       context: context,
-      initialTime: initialTime,
+      initialTime: _nextFollowUpDate != null
+          ? TimeOfDay.fromDateTime(_nextFollowUpDate!)
+          : const TimeOfDay(hour: 11, minute: 0),
     );
 
-    if (pickedTime == null) return;
+    if (t == null) return;
 
-    final combined = DateTime(
-      pickedDate.year,
-      pickedDate.month,
-      pickedDate.day,
-      pickedTime.hour,
-      pickedTime.minute,
-    );
-
-    setState(() => _nextFollowUpDate = combined);
+    setState(() {
+      _nextFollowUpDate = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+    });
   }
 
-  Future<void> _submitForm() async {
+  void _clearAcademic() {
+    _standard = null;
+    _board = null;
+    _selectedExams.clear();
+    _admissionConfirmed = null;
+  }
+
+  Future<void> _submit() async {
     if (!_isCnr && !_formKey.currentState!.validate()) return;
+
     if (_isLoading) return;
 
     setState(() => _isLoading = true);
 
-    final Map<String, dynamic> payload;
+    Map<String, dynamic> payload;
 
     if (_isCnr) {
       final cnrStatus = _statuses.firstWhere(
-        (status) => (status['name'] as String).toLowerCase() == 'cnr',
+        (s) => (s['name'] as String).toLowerCase() == 'cnr',
         orElse: () => null,
       );
 
       payload = {
-        'enquiry': widget.enquiry.id,
-        'remarks': 'CNR (Contact Not Received)',
-        'status_after_follow_up': cnrStatus?['id'],
-        'next_follow_up_date': null,
-        'academic_details_discussed': 'N/A - CNR',
-        'cnr': true,
+        "enquiry": widget.enquiry.id,
+        "remarks": "CNR (Contact Not Received)",
+        "cnr": true,
+        "next_follow_up_date": null,
+        "status_after_follow_up": cnrStatus?['id'],
+        "academic_details_discussed": null,
       };
     } else {
       payload = {
-        'enquiry': widget.enquiry.id,
-        'remarks': _feedbackController.text.trim(),
-        'status_after_follow_up': _selectedStatusId,
-        'next_follow_up_date': _nextFollowUpDate?.toIso8601String(),
-        'academic_details_discussed':
-            "Standard: $_standard, Board: $_board, Exams: ${_selectedExams.join(', ')}, Admission: ${_admissionConfirmed == null ? 'N/A' : (_admissionConfirmed! ? 'Yes' : 'No')}",
-        'cnr': false,
+        "enquiry": widget.enquiry.id,
+        "remarks": _remarksController.text.trim(),
+        "cnr": false,
+        "status_after_follow_up": _selectedStatusId,
+        "next_follow_up_date": _nextFollowUpDate?.toIso8601String(),
+        "academic_details_discussed": {
+          "standard": _standard,
+          "board": _board,
+          "exams": _selectedExams.toList(),
+          "admission_confirmed": _admissionConfirmed,
+        },
       };
     }
 
     try {
       if (widget.existingFollowUp == null) {
-        await _enquiryService.addFollowUp(payload);
+        await _service.addFollowUp(payload);
       } else {
-        await _enquiryService.updateFollowUp(widget.existingFollowUp!.id, payload);
+        await _service.updateFollowUp(widget.existingFollowUp!.id, payload);
       }
 
       if (mounted) {
-        Navigator.of(context).pop(true);
+        Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(widget.existingFollowUp == null
-                ? 'Follow-up saved successfully!'
-                : 'Follow-up updated successfully!'),
+            content: Text(
+              widget.existingFollowUp == null
+                  ? "Follow-up saved!"
+                  : "Follow-up updated!",
+            ),
             backgroundColor: Colors.green,
           ),
         );
       }
     } catch (e) {
-      logger.e('Failed to save follow-up: $e');
+      logger.e("Save error: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to save follow-up: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -190,114 +229,56 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
     }
   }
 
-  @override
-  void dispose() {
-    _feedbackController.dispose();
-    super.dispose();
-  }
-
+  // UI building
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).canvasColor,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(16.0),
-          topRight: Radius.circular(16.0),
-        ),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
       ),
       child: FractionallySizedBox(
         heightFactor: 0.9,
         child: Padding(
           padding: EdgeInsets.fromLTRB(
-            16.0,
-            16.0,
-            16.0,
-            MediaQuery.of(context).viewInsets.bottom + 16.0,
+            16,
+            16,
+            16,
+            MediaQuery.of(context).viewInsets.bottom + 16,
           ),
           child: Form(
             key: _formKey,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      widget.existingFollowUp == null ? 'Enquiry Follow-up' : 'Edit Follow-up',
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ],
-                ),
+                _header(),
                 const Divider(),
                 Expanded(
                   child: SingleChildScrollView(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildInfoTile(
-                          'Student Name',
-                          '${widget.enquiry.firstName} ${widget.enquiry.lastName ?? ''}'.trim(),
+                        _info(
+                          "Student Name",
+                          "${widget.enquiry.firstName} ${widget.enquiry.lastName}"
+                              .trim(),
                         ),
-                        _buildInfoTile('Mobile No.', widget.enquiry.phoneNumber),
-                        const SizedBox(height: 8),
-                        _buildSectionTitle('Follow-up Details'),
-                        _buildCnrToggle(),
+                        _info("Mobile No.", widget.enquiry.phoneNumber),
                         const SizedBox(height: 10),
-                        if (!_isCnr) ...[
-                          _buildStatusDropdown(),
-                          const SizedBox(height: 16),
-                          _buildDateTimePicker(),
-                          _buildTextField(_feedbackController, 'Feedback / Remarks'),
-                          _buildSectionTitle('Academic & Admission Details (Enquiry)'),
-                          _buildChoiceChipGroup(
-                            'Standard',
-                            ['12th', '11th', '10th', '9th', '8th'],
-                            _standard,
-                            (val) => setState(() => _standard = val),
-                          ),
-                          const SizedBox(height: 8),
-                          _buildChoiceChipGroup(
-                            'Board',
-                            ['SSC', 'ICSE', 'CBSE'],
-                            _board,
-                            (val) => setState(() => _board = val),
-                          ),
-                          _buildCheckboxGroup('Exam', [
-                            'JEE (M+A)',
-                            'NEET (UG)',
-                            'MHT-CET + JEE (M)',
-                            'MHT-CET + NEET (UG)',
-                            'MHT-CET',
-                            'Regular',
-                            'Foundation',
-                            'Regular + Foundation',
-                          ], _selectedExams),
-                          _buildChoiceChipGroup(
-                            'Admission Confirmed',
-                            ['Yes', 'No'],
-                            _admissionConfirmed == null ? null : (_admissionConfirmed! ? 'Yes' : 'No'),
-                            (val) => setState(() => _admissionConfirmed = (val == 'Yes')),
-                          ),
-                        ],
-                        const SizedBox(height: 20),
-                        ElevatedButton(
-                          onPressed: _isLoading ? null : _submitForm,
-                          style: ElevatedButton.styleFrom(
-                            minimumSize: const Size(double.infinity, 50),
-                            backgroundColor: cs.primary,
-                            foregroundColor: cs.onPrimary,
-                          ),
-                          child: _isLoading
-                              ? const CircularProgressIndicator(valueColor: AlwaysStoppedAnimation(Colors.white))
-                              : Text(widget.existingFollowUp == null ? 'Save Follow-up' : 'Update Follow-up'),
+                        _section("Follow-up Details"),
+                        _cnrToggle(),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 250),
+                          child: _isCnr
+                              ? const SizedBox.shrink()
+                              : FadeTransition(
+                                  opacity: _fadeAnimation,
+                                  child: _nonCnrSection(),
+                                ),
                         ),
+                        const SizedBox(height: 20),
+                        _saveBtn(cs),
                       ],
                     ),
                   ),
@@ -310,152 +291,218 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet> {
     );
   }
 
-  Widget _buildCnrToggle() {
-    return SwitchListTile(
-      title: const Text('CNR (Contact Not Received)', style: TextStyle(fontWeight: FontWeight.w600)),
-      value: _isCnr,
-      onChanged: (bool value) => setState(() => _isCnr = value),
-      secondary: Icon(Icons.phone_missed, color: _isCnr ? Theme.of(context).colorScheme.primary : Colors.grey),
-      contentPadding: const EdgeInsets.symmetric(vertical: 4.0),
+  Widget _nonCnrSection() {
+    _animController.forward();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _statusDropdown(),
+        const SizedBox(height: 16),
+        _datePicker(),
+        const SizedBox(height: 12),
+
+        CustomTextField(_remarksController, "Feedback / Remarks", maxLines: 3),
+
+        const SizedBox(height: 20),
+        _section("Academic & Admission Details"),
+
+        CustomChoiceChipGroup(
+          title: "Standard",
+          options: ["12th", "11th", "10th", "9th", "8th"],
+          groupValue: _standard,
+          onChanged: (v) => setState(() => _standard = v),
+        ),
+
+        const SizedBox(height: 12),
+        CustomChoiceChipGroup(
+          title: "Board",
+          options: ["SSC", "ICSE", "CBSE"],
+          groupValue: _board,
+          onChanged: (v) => setState(() => _board = v),
+        ),
+
+        const SizedBox(height: 12),
+        CustomFilterChipGroup(
+          title: "Exam",
+          options: const [
+            'JEE (M+A)',
+            'NEET (UG)',
+            'MHT-CET + JEE (M)',
+            'MHT-CET + NEET (UG)',
+            'MHT-CET',
+            'Regular',
+            'Foundation',
+            'Regular + Foundation',
+          ],
+          selectedValues: _selectedExams,
+          onChanged: (exam, selected) {
+            setState(() {
+              if (selected) {
+                _selectedExams.add(exam);
+              } else {
+                _selectedExams.remove(exam);
+              }
+            });
+          },
+        ),
+
+        const SizedBox(height: 12),
+        CustomChoiceChipGroup(
+          title: "Admission Confirmed",
+          options: ["Yes", "No"],
+          groupValue: _admissionConfirmed == null
+              ? null
+              : (_admissionConfirmed! ? "Yes" : "No"),
+          onChanged: (v) => setState(() {
+            _admissionConfirmed = (v == "Yes");
+          }),
+        ),
+      ],
     );
   }
 
-  Widget _buildStatusDropdown() {
-    if (!_isStatusInitialized) {
+  Widget _header() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          widget.existingFollowUp == null
+              ? "Enquiry Follow-up"
+              : "Edit Follow-up",
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
+        IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.close),
+        ),
+      ],
+    );
+  }
+
+  Widget _section(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 16, bottom: 8),
+      child: Text(
+        title,
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _info(String title, String value) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(title, style: TextStyle(color: Theme.of(context).hintColor)),
+      subtitle: Text(
+        value,
+        style: const TextStyle(fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _cnrToggle() {
+    return SwitchListTile(
+      title: const Text(
+        "CNR (Contact Not Received)",
+        style: TextStyle(fontWeight: FontWeight.w600),
+      ),
+      value: _isCnr,
+      onChanged: (v) {
+        setState(() {
+          _isCnr = v;
+          if (v) {
+            _clearAcademic();
+            _animController.reverse();
+          } else {
+            _animController.forward();
+          }
+        });
+      },
+      secondary: Icon(
+        Icons.phone_missed,
+        color: _isCnr ? Colors.red : Colors.grey,
+      ),
+    );
+  }
+
+  Widget _statusDropdown() {
+    if (!_isStatusLoaded) {
       return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 20.0),
+        padding: EdgeInsets.symmetric(vertical: 20),
         child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
       );
     }
 
     if (_statuses.isEmpty) {
-      return const Text('Could not load statuses. Please try again later.');
+      return const Text("No statuses available.");
     }
 
-    return DropdownButtonFormField<int>(
-      initialValue: _selectedStatusId,
-      decoration: const InputDecoration(labelText: 'New Status', border: OutlineInputBorder()),
-      items: _statuses.map((status) {
-        return DropdownMenuItem<int>(
-          value: status['id'] as int,
-          child: Text(status['name'] as String),
-        );
-      }).toList(),
-      onChanged: (value) => setState(() => _selectedStatusId = value),
-      validator: (value) => value == null ? 'Please select a status' : null,
+    return CustomApiDropdownField(
+      label: "New Status",
+      items: List<Map<String, dynamic>>.from(_statuses),
+      value: _selectedStatusId,
+      onChanged: (v) => setState(() => _selectedStatusId = v),
     );
   }
 
-  Widget _buildDateTimePicker() {
+  Widget _datePicker() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Next Follow-up Date & Time', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+        const Text(
+          "Next Follow-up Date & Time",
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
         const SizedBox(height: 8),
         InkWell(
-          onTap: _pickNextFollowUpDateTime,
+          onTap: _pickDateTime,
           child: Container(
             height: 55,
-            decoration: BoxDecoration(border: Border.all(color: Theme.of(context).colorScheme.outline), borderRadius: BorderRadius.circular(4.0)),
-            padding: const EdgeInsets.symmetric(horizontal: 12.0),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Theme.of(context).dividerColor),
+            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  _nextFollowUpDate == null ? 'Select date & time (Optional)' : DateFormat.yMMMd().add_jm().format(_nextFollowUpDate!),
-                  style: TextStyle(color: _nextFollowUpDate == null ? Theme.of(context).textTheme.bodySmall?.color : null, fontSize: 16),
+                  _nextFollowUpDate == null
+                      ? "Select date & time (Optional)"
+                      : DateFormat.yMMMd().add_jm().format(_nextFollowUpDate!),
                 ),
-                Icon(Icons.calendar_today_outlined, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                const Icon(Icons.calendar_today_outlined),
               ],
             ),
           ),
         ),
-        const SizedBox(height: 16),
       ],
     );
   }
 
-  Widget _buildInfoTile(String label, String value) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(label, style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color)),
-      subtitle: Text(value, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-    );
-  }
-
-  Widget _buildSectionTitle(String title) {
-    return Padding(padding: const EdgeInsets.only(top: 16.0, bottom: 8.0), child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)));
-  }
-
-  Widget _buildTextField(TextEditingController controller, String label) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: TextFormField(
-        controller: controller,
-        decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
-        maxLines: 3,
-        validator: (value) => (value == null || value.isEmpty) ? 'Please enter $label' : null,
+  Widget _saveBtn(ColorScheme cs) {
+    return ElevatedButton(
+      onPressed: _isLoading ? null : _submit,
+      style: ElevatedButton.styleFrom(
+        minimumSize: const Size(double.infinity, 50),
+        backgroundColor: cs.primary,
+        foregroundColor: cs.onPrimary,
       ),
-    );
-  }
-
-  Widget _buildChoiceChipGroup(String title, List<String> options, String? groupValue, ValueChanged<String?> onChanged) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(padding: const EdgeInsets.only(bottom: 8.0), child: Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14))),
-        Wrap(
-          spacing: 8.0,
-          runSpacing: 4.0,
-          children: options.map((option) {
-            final bool isSelected = groupValue == option;
-            return ChoiceChip(
-              label: Text(option),
-              selected: isSelected,
-              showCheckmark: false,
-              selectedColor: Theme.of(context).colorScheme.primary,
-              labelStyle: TextStyle(color: isSelected ? Colors.white : Theme.of(context).textTheme.bodyLarge?.color, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal),
-              backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha:0.03),
-              onSelected: (selected) {
-                if (selected) onChanged(option);
-              },
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCheckboxGroup(String title, List<String> options, Set<String> selectedValues) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(padding: const EdgeInsets.only(bottom: 8.0), child: Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14))),
-        Wrap(
-          spacing: 8.0,
-          runSpacing: 4.0,
-          children: options.map((option) {
-            final bool isSelected = selectedValues.contains(option);
-            return FilterChip(
-              label: Text(option),
-              selected: isSelected,
-              showCheckmark: false,
-              selectedColor: Theme.of(context).colorScheme.primary,
-              labelStyle: TextStyle(color: isSelected ? Colors.white : Theme.of(context).textTheme.bodyLarge?.color, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal),
-              backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha:0.03),
-              onSelected: (selected) {
-                setState(() {
-                  if (selected) {
-                    selectedValues.add(option);
-                  } else {
-                    selectedValues.remove(option);
-                  }
-                });
-              },
-            );
-          }).toList(),
-        ),
-      ],
+      child: _isLoading
+          ? const SizedBox(
+              height: 24,
+              width: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation(Colors.white),
+              ),
+            )
+          : Text(
+              widget.existingFollowUp == null
+                  ? "Save Follow-up"
+                  : "Update Follow-up",
+            ),
     );
   }
 }

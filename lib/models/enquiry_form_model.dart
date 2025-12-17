@@ -39,6 +39,8 @@ class EnquiryFormModel {
   final totalFeesController = TextEditingController();
   final installmentsController = TextEditingController();
 
+  final TextEditingController schoolSearchController = TextEditingController();
+  
   void prefill(Enquiry enquiry, List<Map<String, dynamic>> schools) {
     firstNameController.text = enquiry.firstName;
     middleNameController.text = enquiry.middleName ?? '';

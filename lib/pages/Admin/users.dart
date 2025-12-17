@@ -6,8 +6,6 @@ import 'package:go_router/go_router.dart';
 import 'package:logger/logger.dart';
 import '../../models/user_model.dart';
 import '../../services/admin_user.dart';
-import '../../widgets/password_display_dialog.dart';
-
 
 class UserListPage extends StatefulWidget {
   const UserListPage({super.key});
@@ -80,7 +78,7 @@ class _UserListPageState extends State<UserListPage> {
   Future<void> _deleteUser(User user) async {
     try {
       await _adminUserService.deleteUser(user.userId);
-      
+
       if (mounted) {
         setState(() {
           _allUsers.removeWhere((u) => u.userId == user.userId);
@@ -133,64 +131,10 @@ class _UserListPageState extends State<UserListPage> {
     );
   }
 
-  void _showPasswordResetConfirmationDialog(User user) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Reset Password'),
-          content: Text(
-            'Are you sure you want to reset password for ${user.name}?',
-          ),
-          actions: [
-            TextButton(
-              child: const Text('Cancel'),
-              onPressed: () => Navigator.pop(context),
-            ),
-            TextButton(
-              style: TextButton.styleFrom(
-                foregroundColor: Theme.of(context).colorScheme.primary,
-              ),
-              onPressed: () async {
-                Navigator.pop(context);
-                await _resetPassword(user);
-              },
-              child: const Text('Reset'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void> _resetPassword(User user) async {
-    try {
-      final response = await _adminUserService.resetPassword(user.userId);
-      final newPassword = response['new_password'];
-      await showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) {
-          return PasswordDisplayDialog(
-            title: "Password Reset Successful",
-            username: user.username,
-            password: newPassword,
-          );
-        },
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    
+
     return Scaffold(
       appBar: AppBar(
         scrolledUnderElevation: 0,
@@ -228,7 +172,11 @@ class _UserListPageState extends State<UserListPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(_error!, textAlign: TextAlign.center, style: TextStyle(color: cs.error)),
+            Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: cs.error),
+            ),
             const SizedBox(height: 16),
             FilledButton.tonal(
               onPressed: _refreshUsers,
@@ -258,15 +206,23 @@ class _UserListPageState extends State<UserListPage> {
             side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.4)),
           ),
           child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 4,
+            ),
             leading: CircleAvatar(
               backgroundColor: cs.primaryContainer,
               foregroundColor: cs.onPrimaryContainer,
-              child: Text(user.name.isNotEmpty ? user.name[0].toUpperCase() : '?'),
+              child: Text(
+                user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
+              ),
             ),
             title: Text(
               user.name,
-              style: TextStyle(fontWeight: FontWeight.bold, color: cs.onSurface),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: cs.onSurface,
+              ),
             ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -282,11 +238,15 @@ class _UserListPageState extends State<UserListPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.lock_reset_outlined),
+                  icon: const Icon(Icons.edit_outlined),
                   color: cs.primary,
-                  tooltip: "Reset Password",
-                  onPressed: () => _showPasswordResetConfirmationDialog(user),
+                  tooltip: "Edit User",
+                  onPressed: () async {
+                    final result = await context.push('/add-user', extra: user);
+                    if (result == true && mounted) _refreshUsers();
+                  },
                 ),
+
                 IconButton(
                   icon: const Icon(Icons.delete_outline),
                   color: cs.error,

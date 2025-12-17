@@ -10,11 +10,31 @@ class _StackedCallData {
 
   _StackedCallData(this.date, this.followUpsToday, this.cnrAndDone);
 
+  static int _safeInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.round();
+    final s = value?.toString() ?? '';
+    return int.tryParse(s) ?? 0;
+  }
+
+  static DateTime _safeDate(dynamic value) {
+    if (value is DateTime) return value;
+    if (value is String && value.trim().isNotEmpty) {
+      try {
+        return DateTime.parse(value);
+      } catch (_) {
+        // fall through
+      }
+    }
+    // Fallback date if backend sends bad format
+    return DateTime.now();
+  }
+
   factory _StackedCallData.fromJson(Map<String, dynamic> json) {
     return _StackedCallData(
-      DateTime.parse(json['date']),
-      (json['followups_today'] ?? 0) as int,
-      (json['cnr_and_done'] ?? 0) as int,
+      _safeDate(json['date']),
+      _safeInt(json['followups_today'] ?? json['followUpsToday']),
+      _safeInt(json['cnr_and_done'] ?? json['cnrAndDone']),
     );
   }
 }
@@ -58,8 +78,12 @@ class _TelecallerCallChartState extends State<TelecallerCallChart> {
 
     try {
       final response = await _service.getCallActivityData(_selectedDateRange);
-      final data = response
-          .map((json) => _StackedCallData.fromJson(json))
+
+      final List<dynamic> rawList = response;
+
+      final data = rawList
+          .whereType<Map<String, dynamic>>()
+          .map(_StackedCallData.fromJson)
           .toList();
 
       if (!mounted) return;
@@ -121,7 +145,8 @@ class _TelecallerCallChartState extends State<TelecallerCallChart> {
         TextButton.icon(
           icon: const Icon(Icons.calendar_today_outlined, size: 16),
           label: Text(
-            '${DateFormat.yMMMd().format(_selectedDateRange.start)} - ${DateFormat.yMMMd().format(_selectedDateRange.end)}',
+            '${DateFormat.yMMMd().format(_selectedDateRange.start)} - '
+            '${DateFormat.yMMMd().format(_selectedDateRange.end)}',
             overflow: TextOverflow.ellipsis,
           ),
           onPressed: () => _selectDateRange(context),

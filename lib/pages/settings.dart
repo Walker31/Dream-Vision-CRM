@@ -39,6 +39,7 @@ class _SettingsState extends State<Settings> {
             TextButton(
               child: const Text('Logout'),
               onPressed: () async {
+                Navigator.of(context).pop();
                 await authProvider.logout();
                 if (mounted) {
                   context.go('/login');

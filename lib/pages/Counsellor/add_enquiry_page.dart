@@ -12,6 +12,8 @@ import '../../widgets/form_navigation_controls.dart';
 import 'package:dreamvision/widgets/form_widgets.dart';
 import 'package:dreamvision/widgets/section_card.dart';
 
+import '../../widgets/school_search_field.dart';
+
 class AddEnquiryPage extends StatefulWidget {
   final Enquiry? enquiry;
   const AddEnquiryPage({super.key, this.enquiry});
@@ -23,7 +25,6 @@ class AddEnquiryPage extends StatefulWidget {
 class _AddEnquiryPageState extends State<AddEnquiryPage> {
   final Logger _logger = Logger();
   final EnquiryService _enquiryService = EnquiryService();
-
   final PageController _pageController = PageController();
   int _currentPage = 0;
   final List<GlobalKey<FormState>> _formKeys = [
@@ -43,7 +44,16 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
   List<Map<String, dynamic>> _sources = [];
   List<Map<String, dynamic>> _statuses = [];
   List<Map<String, dynamic>> _schools = [];
-  final List<String> _occupations = ['Defence','Doctor','Farmer','Govt. Service','Police','Private Job','Teacher','Other'];
+  final List<String> _occupations = [
+    'Defence',
+    'Doctor',
+    'Farmer',
+    'Govt. Service',
+    'Police',
+    'Private Job',
+    'Teacher',
+    'Other',
+  ];
 
   @override
   void initState() {
@@ -56,13 +66,30 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
         // Prefill the model
         _formModel.prefill(widget.enquiry!, _schools);
 
-        // Also prefill dropdown IDs
+        // Prefill SCHOOL SEARCH TEXT
+        if (_formModel.selectedSchoolId != null) {
+          final selected = _schools.firstWhere(
+            (s) => s['id'] == _formModel.selectedSchoolId,
+            orElse: () => {},
+          );
+
+          if (selected.isNotEmpty) {
+            _formModel.schoolSearchController.text = selected['name'];
+          } else if (_formModel.selectedSchoolId ==
+              EnquiryFormModel.otherSchoolId) {
+            _formModel.schoolSearchController.text =
+                _formModel.otherSchoolController.text;
+          }
+        }
+
+        // Prefill Source dropdown
         final src = _sources.firstWhere(
           (s) => s['name'] == widget.enquiry!.sourceName,
           orElse: () => {},
         );
         if (src.isNotEmpty) _formModel.sourceId = src['id'];
 
+        // Prefill Status dropdown
         final st = _statuses.firstWhere(
           (s) => s['name'] == widget.enquiry!.currentStatusName,
           orElse: () => {},
@@ -143,13 +170,19 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
     }
 
     if (!allValid || _isSubmitting) {
-       if (!allValid) {
-         // If invalid, jump to the first page with an error
-        int firstInvalidPage = _formKeys.indexWhere((key) => key.currentState != null && !key.currentState!.validate());
+      if (!allValid) {
+        // If invalid, jump to the first page with an error
+        int firstInvalidPage = _formKeys.indexWhere(
+          (key) => key.currentState != null && !key.currentState!.validate(),
+        );
         if (firstInvalidPage != -1 && firstInvalidPage != _currentPage) {
-          _pageController.animateToPage(firstInvalidPage, duration: const Duration(milliseconds: 300), curve: Curves.ease);
+          _pageController.animateToPage(
+            firstInvalidPage,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.ease,
+          );
         }
-       }
+      }
       return;
     }
 
@@ -233,14 +266,15 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        
         scrolledUnderElevation: 0,
         surfaceTintColor: Colors.transparent,
         backgroundColor: Theme.of(context).colorScheme.surface,
         leading: const BackButtonIos(),
-        title: Text(_isEditMode
-            ? 'Edit Enquiry'
-            : 'New Enquiry (Step ${_currentPage + 1} of 3)'),
+        title: Text(
+          _isEditMode
+              ? 'Edit Enquiry'
+              : 'New Enquiry (Step ${_currentPage + 1} of 3)',
+        ),
         centerTitle: false,
       ),
       body: _isLoading
@@ -293,24 +327,32 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
           title: 'Personal Details',
           children: [
             CustomTextField(
-                _formModel.firstNameController, 'First Name'),
+              _formModel.firstNameController,
+              'First Name',
+              isRequired: true,
+            ),
             CustomTextField(
-                _formModel.middleNameController, 'Middle Name',
-                isRequired: false),
+              _formModel.middleNameController,
+              'Middle Name',
+              isRequired: false,
+            ),
             CustomTextField(
-                _formModel.lastNameController, 'Last Name',
-                isRequired: false),
+              _formModel.lastNameController,
+              'Last Name',
+              isRequired: false,
+            ),
             CustomDateField(
               label: 'Date of Birth',
               date: _formModel.selectedDob,
               onTap: () => _pickDate(context),
+              isRequired: true,
             ),
             CustomTextField(
               _formModel.phoneController,
               'Student\'s Phone',
               keyboardType: TextInputType.phone,
               validatorType: "phone",
-              isRequired: false
+              isRequired: false,
             ),
             CustomTextField(
               _formModel.emailController,
@@ -341,6 +383,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
               'Father\'s Phone',
               keyboardType: TextInputType.phone,
               validatorType: "phone",
+              isRequired: true,
             ),
             CustomTextField(
               _formModel.motherPhoneController,
@@ -355,6 +398,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
               value: _formModel.fatherOccupation,
               onChanged: (val) =>
                   setState(() => _formModel.fatherOccupation = val),
+              isRequired: true,
             ),
           ],
         ),
@@ -370,10 +414,11 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
           children: [
             CustomChoiceChipGroup(
               title: 'Enquiring for Standard',
-              options: const ['11th', '12th', '10th', '9th', '8th'],
+              options: const ['8th', '9th', '10th', '11th', '12th'],
               groupValue: _formModel.enquiringForStandard,
               onChanged: (val) =>
                   setState(() => _formModel.enquiringForStandard = val),
+              isRequired: true,
             ),
             const SizedBox(height: 16),
             CustomDropdownField(
@@ -382,6 +427,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
               value: _formModel.enquiringForBoard,
               onChanged: (val) =>
                   setState(() => _formModel.enquiringForBoard = val),
+              isRequired: true,
             ),
             CustomFilterChipGroup(
               title: 'Exam',
@@ -394,6 +440,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
                 'Regular',
                 'Foundation',
                 'Regular + Foundation',
+                'Other',
               ],
               selectedValues: _formModel.selectedExams,
               onChanged: (option, isSelected) {
@@ -405,21 +452,17 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
                   }
                 });
               },
+              isRequired: true,
             ),
-            CustomApiDropdownField(
-              label: 'School',
-              items: _schools,
+            const SizedBox(height: 16),
+            SearchableSchoolField(
+              schools: _schools,
               value: _formModel.selectedSchoolId,
-              onChanged: (val) =>
-                  setState(() => _formModel.selectedSchoolId = val),
-              includeOther: true,
-              otherId: EnquiryFormModel.otherSchoolId,
+              controller: _formModel.schoolSearchController,
+              onChanged: (id) {
+                setState(() => _formModel.selectedSchoolId = id);
+              },
             ),
-            if (_formModel.selectedSchoolId == EnquiryFormModel.otherSchoolId)
-              CustomTextField(
-                _formModel.otherSchoolController,
-                'Enter School Name',
-              ),
           ],
         ),
         SectionCard(
@@ -445,10 +488,12 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
                 formControllers: _formModel.academicForms[index],
                 index: index,
                 onRemove: () => _removeAcademicForm(index),
-                onSave: () =>
-                    setState(() => _formModel.academicForms[index]['isSaved'] = true),
-                onEdit: () =>
-                    setState(() => _formModel.academicForms[index]['isSaved'] = false),
+                onSave: () => setState(
+                  () => _formModel.academicForms[index]['isSaved'] = true,
+                ),
+                onEdit: () => setState(
+                  () => _formModel.academicForms[index]['isSaved'] = false,
+                ),
               ),
             ),
           ],
@@ -483,6 +528,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
                   }
                 });
               },
+              isRequired: false,
             ),
             CustomTextField(
               _formModel.referralController,
@@ -497,12 +543,14 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
             CustomApiDropdownField(
               label: 'Current Status',
               items: _statuses,
+              isRequired: true,
               value: _formModel.currentStatusId,
               onChanged: (val) =>
                   setState(() => _formModel.currentStatusId = val),
             ),
             CustomDropdownField(
               label: 'Lead Temperature',
+              isRequired: true,
               items: const ['Hot', 'Warm', 'Cold'],
               value: _formModel.leadTemperature,
               onChanged: (val) =>

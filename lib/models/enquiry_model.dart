@@ -1,17 +1,19 @@
 class Enquiry {
   final int id;
-  // final String? school; // REMOVED - This is redundant, use schoolName
   final String? schoolName;
   final List<dynamic> interactions;
   final List<dynamic> followUps;
-  
-  // 1. CRITICAL: Added academicPerformance
-  final List<dynamic>? academicPerformance; 
+  final List<dynamic>? academicPerformance;
 
   final Map<String, dynamic>? assignedToCounsellorDetails;
   final Map<String, dynamic>? assignedToTelecallerDetails;
+
+  final Map<String, dynamic>? createdByDetails;    // NEW
+  final Map<String, dynamic>? updatedByDetails;    // NEW
+
   final String? currentStatusName;
   final String? sourceName;
+
   final String firstName;
   final String? middleName;
   final String? lastName;
@@ -36,26 +38,26 @@ class Enquiry {
   final String updatedAt;
   final String? nextFollowUp;
 
-
   Enquiry({
     required this.id,
-    // required this.school, // REMOVED
     required this.interactions,
     required this.followUps,
-    this.academicPerformance, // Added to constructor
+    this.academicPerformance,
     required this.assignedToCounsellorDetails,
     required this.assignedToTelecallerDetails,
+    this.createdByDetails,
+    this.updatedByDetails,
     required this.currentStatusName,
     required this.sourceName,
     required this.firstName,
-    this.nextFollowUp,
-    this.schoolName,
     this.middleName,
     this.lastName,
     this.dateOfBirth,
     required this.phoneNumber,
+    this.nextFollowUp,
     this.email,
     this.address,
+    this.schoolName,
     this.pincode,
     required this.referredBy,
     this.fatherPhoneNumber,
@@ -73,71 +75,71 @@ class Enquiry {
     required this.updatedAt,
   });
 
-  /// ✅ Factory to create object from JSON
   factory Enquiry.fromJson(Map<String, dynamic> json) {
     return Enquiry(
       id: json['id'],
-      // school: json['school'], // REMOVED
       interactions: json['interactions'] ?? [],
       followUps: json['follow_ups'] ?? [],
+      academicPerformance: json['academic_performance'],
 
-      // 1. CRITICAL: Added academic_performance from JSON
-      academicPerformance: json['academic_performance'] as List<dynamic>?,
+      assignedToCounsellorDetails: json['assigned_to_counsellor_details'],
+      assignedToTelecallerDetails: json['assigned_to_telecaller_details'],
 
-      assignedToCounsellorDetails:
-          json['assigned_to_counsellor_details'] as Map<String, dynamic>?,
-      assignedToTelecallerDetails:
-          json['assigned_to_telecaller_details'] as Map<String, dynamic>?,
-      currentStatusName: json['current_status_name'] as String?,
-      sourceName: json['source_name'] as String?,
+      createdByDetails: json['created_by_details'],    // NEW
+      updatedByDetails: json['updated_by_details'],    // NEW
+
+      currentStatusName: json['current_status_name'],
+      sourceName: json['source_name'],
+
       firstName: json['first_name'],
-      middleName: json['middle_name'] as String?,
-      lastName: json['last_name'] as String?,
-      dateOfBirth: json['date_of_birth'] as String?,
+      middleName: json['middle_name'],
+      lastName: json['last_name'],
+      dateOfBirth: json['date_of_birth'],
       phoneNumber: json['phone_number'],
-      email: json['email'] as String?,
-      address: json['address'] as String?,
-      nextFollowUp: json['next_follow_up'],
+      email: json['email'],
+      address: json['address'],
+      schoolName: json['school_name'],
 
-      // 2. FIXED: Added 'as int?' for type safety
-      pincode: json['pincode'] as int?, 
+      pincode: json['pincode'] as int?,
 
       referredBy: json['referred_by'] != null
           ? List<String>.from(json['referred_by'])
           : [],
-      fatherPhoneNumber: json['father_phone_number'] as String?,
-      motherPhoneNumber: json['mother_phone_number'] as String?,
-      fatherOccupation: json['father_occupation'] as String?,
-      enquiringForStandard: json['enquiring_for_standard'] as String?,
-      enquiringForBoard: json['enquiring_for_board'] as String?,
-      enquiringForExam: json['enquiring_for_exam'] as String?,
-      leadTemperature: json['lead_temperature'] as String?,
 
-      // 3. FIXED: Added 'as String?' for type safety
-      totalFeesDecided: json['total_fees_decided'] as String?,
-      schoolName: json['school_name'] as String?,
+      fatherPhoneNumber: json['father_phone_number'],
+      motherPhoneNumber: json['mother_phone_number'],
+      fatherOccupation: json['father_occupation'],
 
-      // 4. FIXED: Added 'as int?' for type safety
+      enquiringForStandard: json['enquiring_for_standard'],
+      enquiringForBoard: json['enquiring_for_board'],
+      enquiringForExam: json['enquiring_for_exam'],
+
+      leadTemperature: json['lead_temperature'],
+      totalFeesDecided: json['total_fees_decided'],
       installmentsAgreed: json['installments_agreed'] as int?,
-
       isAdmissionConfirmed: json['is_admission_confirmed'] ?? false,
-      referral: json['referral'] as String?,
+      referral: json['referral'],
+
       createdAt: json['created_at'],
       updatedAt: json['updated_at'],
+      nextFollowUp: json['next_follow_up'],
     );
   }
 
-  /// ✅ Convert object to JSON (useful if you need to send back)
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      // 'school': school, // REMOVED
       'school_name': schoolName,
       'interactions': interactions,
       'follow_ups': followUps,
-      'academic_performance': academicPerformance, // Added
+      'academic_performance': academicPerformance,
+
       'assigned_to_counsellor_details': assignedToCounsellorDetails,
       'assigned_to_telecaller_details': assignedToTelecallerDetails,
+
+      'created_by_details': createdByDetails,      // NEW
+      'updated_by_details': updatedByDetails,      // NEW
+
       'current_status_name': currentStatusName,
       'source_name': sourceName,
       'first_name': firstName,

@@ -3,6 +3,25 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+/// Helper to build a label with a red asterisk if the field is required
+Widget _buildLabel(String label, bool isRequired) {
+  return Text.rich(
+    TextSpan(
+      text: label,
+      children: [
+        if (isRequired)
+          const TextSpan(
+            text: ' *',
+            style: TextStyle(
+              color: Colors.red,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
 class CustomTextField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
@@ -28,9 +47,14 @@ class CustomTextField extends StatelessWidget {
       child: TextFormField(
         controller: controller,
         maxLines: maxLines,
+        maxLength: validatorType == "phone"
+            ? 10
+            : validatorType == "pincode"
+                ? 6
+                : null,
         keyboardType: keyboardType,
         decoration: InputDecoration(
-          labelText: label,
+          label: _buildLabel(label, isRequired), // Used label instead of labelText
           filled: true,
           fillColor: Colors.grey.withAlpha(26),
           border: OutlineInputBorder(
@@ -38,24 +62,27 @@ class CustomTextField extends StatelessWidget {
             borderSide: BorderSide.none,
           ),
         ),
+        buildCounter: (
+          BuildContext context, {
+          required int currentLength,
+          required bool isFocused,
+          required int? maxLength,
+        }) {
+          return null;
+        },
         validator: (value) {
-          // Required check
           if (isRequired && (value == null || value.isEmpty)) {
             return 'Please enter $label';
           }
 
           if (value == null || value.isEmpty) return null;
-
           final digits = value.replaceAll(RegExp(r'\D'), '');
-
-          // PHONE VALIDATION - 10 digits
           if (validatorType == "phone") {
             if (digits.length != 10) {
               return 'Please enter a valid mobile number.';
             }
           }
 
-          // PINCODE VALIDATION - 6 digits
           if (validatorType == "pincode") {
             if (digits.length != 6) {
               return 'Please enter a valid pincode.';
@@ -73,35 +100,46 @@ class CustomDateField extends StatelessWidget {
   final String label;
   final DateTime? date;
   final VoidCallback onTap;
+  final bool isRequired;
 
   const CustomDateField({
     super.key,
     required this.label,
     required this.date,
     required this.onTap,
+    this.isRequired = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final bool showError = isRequired && date == null;
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: InkWell(
+      child: GestureDetector(
         onTap: onTap,
-        child: InputDecorator(
-          decoration: InputDecoration(
-            labelText: label,
-            suffixIcon: const Icon(Icons.calendar_today),
-            filled: true,
-            fillColor: Colors.grey.withAlpha(26),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide.none,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            InputDecorator(
+              decoration: InputDecoration(
+                label: _buildLabel(label, isRequired), // Used label instead of labelText
+                filled: true,
+                fillColor: Colors.grey.withAlpha(26),
+                suffixIcon: const Icon(Icons.calendar_today),
+                errorText: showError ? 'Please select $label' : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              child: Text(
+                date != null
+                    ? DateFormat.yMd().format(date!)
+                    : 'Select a date',
+              ),
             ),
-          ),
-          child: Text(
-            date != null ? DateFormat.yMd().format(date!) : 'Select a date',
-            style: const TextStyle(fontSize: 16),
-          ),
+          ],
         ),
       ),
     );
@@ -113,6 +151,7 @@ class CustomDropdownField extends StatelessWidget {
   final List<String> items;
   final String? value;
   final ValueChanged<String?> onChanged;
+  final bool isRequired;
 
   const CustomDropdownField({
     super.key,
@@ -120,6 +159,7 @@ class CustomDropdownField extends StatelessWidget {
     required this.items,
     required this.value,
     required this.onChanged,
+    this.isRequired = false,
   });
 
   @override
@@ -128,7 +168,7 @@ class CustomDropdownField extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: DropdownButtonFormField<String>(
         decoration: InputDecoration(
-          labelText: label,
+          label: _buildLabel(label, isRequired), // Used label instead of labelText
           filled: true,
           fillColor: Colors.grey.withAlpha(26),
           border: OutlineInputBorder(
@@ -138,11 +178,14 @@ class CustomDropdownField extends StatelessWidget {
         ),
         initialValue: items.contains(value) ? value : null,
         items: items
-            .map(
-              (item) =>
-                  DropdownMenuItem<String>(value: item, child: Text(item)),
-            )
+            .map((item) => DropdownMenuItem(value: item, child: Text(item)))
             .toList(),
+        validator: (val) {
+          if (isRequired && (val == null || val.isEmpty)) {
+            return "Please select $label";
+          }
+          return null;
+        },
         onChanged: onChanged,
       ),
     );
@@ -153,6 +196,7 @@ class CustomApiDropdownField extends StatelessWidget {
   final String label;
   final List<Map<String, dynamic>> items;
   final int? value;
+  final bool isRequired;
   final ValueChanged<int?> onChanged;
   final bool includeOther;
   final int otherId;
@@ -160,6 +204,7 @@ class CustomApiDropdownField extends StatelessWidget {
   const CustomApiDropdownField({
     super.key,
     required this.label,
+    this.isRequired = false,
     required this.items,
     required this.value,
     required this.onChanged,
@@ -175,7 +220,6 @@ class CustomApiDropdownField extends StatelessWidget {
             value: item['id'],
             child: Text(
               item['name'],
-              // FIX 2: Handle long text in the menu
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -192,7 +236,7 @@ class CustomApiDropdownField extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: DropdownButtonFormField<int>(
         decoration: InputDecoration(
-          labelText: label,
+          label: _buildLabel(label, isRequired), // Used label instead of labelText
           filled: true,
           fillColor: Colors.grey.withAlpha(26),
           border: OutlineInputBorder(
@@ -200,15 +244,18 @@ class CustomApiDropdownField extends StatelessWidget {
             borderSide: BorderSide.none,
           ),
         ),
-
-        // FIX 1: Force the dropdown to fill its parent's width
         isExpanded: true,
-
         initialValue: dropdownItems.any((item) => item.value == value)
             ? value
             : null,
         items: dropdownItems,
         onChanged: onChanged,
+        validator: (val) {
+          if (isRequired && val == null) {
+            return "Please select $label";
+          }
+          return null;
+        },
       ),
     );
   }
@@ -219,6 +266,7 @@ class CustomChoiceChipGroup extends StatelessWidget {
   final List<String> options;
   final String? groupValue;
   final ValueChanged<String?> onChanged;
+  final bool isRequired; // Added this to support asterisk on Choice Chips
 
   const CustomChoiceChipGroup({
     super.key,
@@ -226,6 +274,7 @@ class CustomChoiceChipGroup extends StatelessWidget {
     required this.options,
     required this.groupValue,
     required this.onChanged,
+    this.isRequired = false,
   });
 
   @override
@@ -235,10 +284,7 @@ class CustomChoiceChipGroup extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: 8.0),
-          child: Text(
-            title,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-          ),
+          child: _buildLabel(title, isRequired), // Added asterisk to the title
         ),
         Wrap(
           spacing: 8.0,
@@ -274,6 +320,7 @@ class CustomFilterChipGroup extends StatelessWidget {
   final List<String> options;
   final Set<String> selectedValues;
   final Function(String, bool) onChanged;
+  final bool isRequired; // Added this to support asterisk on Filter Chips
 
   const CustomFilterChipGroup({
     super.key,
@@ -281,6 +328,7 @@ class CustomFilterChipGroup extends StatelessWidget {
     required this.options,
     required this.selectedValues,
     required this.onChanged,
+    this.isRequired = false,
   });
 
   @override
@@ -290,10 +338,7 @@ class CustomFilterChipGroup extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: 8.0),
-          child: Text(
-            title,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-          ),
+          child: _buildLabel(title, isRequired), // Added asterisk to the title
         ),
         Wrap(
           spacing: 8.0,

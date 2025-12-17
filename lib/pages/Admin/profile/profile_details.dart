@@ -3,10 +3,18 @@ import 'package:dreamvision/providers/auth_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
 
-class EmployeeDetailsPage extends StatelessWidget {
-  const EmployeeDetailsPage({super.key});
+class EmployeeDetailsPage extends StatefulWidget {
+   const EmployeeDetailsPage({super.key});
+
+  @override
+  State<EmployeeDetailsPage> createState() => _EmployeeDetailsPageState();
+}
+
+class _EmployeeDetailsPageState extends State<EmployeeDetailsPage> {
+  Logger logger = Logger();
 
   // Helper to format date
   String _formatDate(String? dateStr) {
@@ -23,7 +31,7 @@ class EmployeeDetailsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
     final User? user = authProvider.user;
-
+    logger.d(user?.toJson());
     if (user == null) {
       return Scaffold(
         appBar: AppBar(
@@ -170,7 +178,6 @@ class EmployeeDetailsPage extends StatelessWidget {
   }
 
   // ---------------- PROFILE HEADER ------------------
-
   Widget _buildProfileHeader({
     required BuildContext context,
     required String name,
@@ -236,7 +243,6 @@ class EmployeeDetailsPage extends StatelessWidget {
   }
 
   // ------------------- DETAIL CARD -------------------
-
   Widget _buildDetailCard(
     BuildContext context, {
     required IconData icon,
@@ -290,7 +296,6 @@ class EmployeeDetailsPage extends StatelessWidget {
   }
 
   // ------------------- DETAIL ROW -------------------
-
   Widget _buildDetailRow(
     BuildContext context,
     IconData icon,

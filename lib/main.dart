@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:dreamvision/pages/Admin/add_user_page.dart';
 import 'package:dreamvision/pages/Admin/admin_dashboard.dart';
 import 'package:dreamvision/pages/CRM/crm_main.dart';
@@ -23,21 +24,38 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import 'models/enquiry_model.dart';
+import 'models/user_model.dart';
+import 'utils/global_error_handler.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  final appDocumentDir = await getApplicationDocumentsDirectory();
-  await Hive.initFlutter(appDocumentDir.path);
-  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+void main() {
+  runZonedGuarded(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
 
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (context) => AuthProvider()),
-        ChangeNotifierProvider(create: (context) => ThemeProvider()),
-      ],
-      child: const App(),
-    ),
+      final appDocumentDir = await getApplicationDocumentsDirectory();
+      await Hive.initFlutter(appDocumentDir.path);
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+      ]);
+
+      FlutterError.onError = (FlutterErrorDetails details) {
+        FlutterError.presentError(details);
+        GlobalErrorHandler.showError(details.exceptionAsString());
+      };
+
+      runApp(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (context) => AuthProvider()),
+            ChangeNotifierProvider(create: (context) => ThemeProvider()),
+          ],
+          child: const App(),
+        ),
+      );
+    },
+    (error, stack) {
+      GlobalErrorHandler.showError(error.toString());
+    },
   );
 }
 
@@ -46,13 +64,13 @@ class App extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Access the ThemeProvider to get the current theme mode
     final themeProvider = Provider.of<ThemeProvider>(context);
 
     return MaterialApp.router(
       routerConfig: _router,
       title: 'DreamVision',
       debugShowCheckedModeBanner: false,
+      scaffoldMessengerKey: GlobalErrorHandler.messengerKey,
       themeMode: themeProvider.themeMode,
       theme: ThemeData(
         brightness: Brightness.light,
@@ -60,7 +78,6 @@ class App extends StatelessWidget {
         useMaterial3: true,
       ),
       darkTheme: ThemeData(
-        // Define your dark theme
         brightness: Brightness.dark,
         colorSchemeSeed: const Color(0xFF3A5B8A),
         useMaterial3: true,
@@ -88,15 +105,15 @@ final GoRouter _router = GoRouter(
       path: '/counsellor',
       builder: (context, state) => const CounsellorDashboard(),
     ),
+
     GoRoute(
       path: '/add-enquiry',
       builder: (context, state) {
-        // Get the enquiry object from 'extra'
         final Enquiry? enquiry = state.extra as Enquiry?;
-        // Pass it to the page
         return AddEnquiryPage(enquiry: enquiry);
       },
     ),
+
     GoRoute(
       path: '/all-enquiries',
       builder: (context, state) => const AllEnquiriesPage(),
@@ -104,12 +121,18 @@ final GoRouter _router = GoRouter(
     GoRoute(path: '/settings', builder: (context, state) => const Settings()),
     GoRoute(
       path: '/profile-details',
-      builder: (context, state) => const EmployeeDetailsPage(),
+      builder: (context, state) => EmployeeDetailsPage(),
     ),
+
     GoRoute(
       path: '/add-user',
-      builder: (context, state) => const AddUserPage(),
+      builder: (context, state) {
+        final extra = state.extra;
+        final user = extra is User ? extra : null;
+        return AddUserPage(user: user);
+      },
     ),
+
     GoRoute(
       path: '/enquiry/:enquiryId',
       builder: (context, state) {
@@ -118,21 +141,23 @@ final GoRouter _router = GoRouter(
         return EnquiryDetailPage(enquiryId: enquiryId);
       },
     ),
+
     GoRoute(
       path: '/profile/details',
-      builder: (context, state) => const EmployeeDetailsPage(),
+      builder: (context, state) => EmployeeDetailsPage(),
     ),
+
     GoRoute(
       path: '/change-password',
       builder: (context, state) => const ChangePasswordPage(),
     ),
+
     GoRoute(
       path: '/follow-ups/:enquiryId',
       builder: (context, state) {
         final enquiryId =
             int.tryParse(state.pathParameters['enquiryId'] ?? '') ?? 0;
-        final enquiryName =
-            state.extra as String? ?? 'Enquiry'; // Pass name as extra
+        final enquiryName = state.extra as String? ?? 'Enquiry';
         return FollowUpPage(enquiryId: enquiryId, enquiryName: enquiryName);
       },
     ),
