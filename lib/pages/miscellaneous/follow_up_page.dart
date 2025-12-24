@@ -1,3 +1,4 @@
+import 'package:dreamvision/utils/global_error_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:logger/logger.dart';
@@ -67,9 +68,7 @@ class _FollowUpPageState extends State<FollowUpPage> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Failed to open editor: $e")));
+      GlobalErrorHandler.error('Failed to open editor: $e');
     }
   }
 

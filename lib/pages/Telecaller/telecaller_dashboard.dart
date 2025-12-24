@@ -1,6 +1,7 @@
 import 'package:dreamvision/models/enquiry_model.dart';
 import 'package:dreamvision/services/enquiry_service.dart';
 import 'package:dreamvision/pages/Telecaller/follow_up_sheet.dart';
+import 'package:dreamvision/utils/global_error_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -137,9 +138,7 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
       await launchUrl(launchUri);
     } else {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Could not open dialer for $phoneNumber")),
-      );
+      GlobalErrorHandler.error("Could not open dialer for $phoneNumber");
     }
   }
 

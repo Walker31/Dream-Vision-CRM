@@ -1,5 +1,6 @@
 // ignore_for_file: use_build_context_synchronously
 
+import 'package:dreamvision/utils/global_error_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:logger/logger.dart';
@@ -206,23 +207,16 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet>
 
       if (mounted) {
         Navigator.pop(context, true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              widget.existingFollowUp == null
-                  ? "Follow-up saved!"
-                  : "Follow-up updated!",
-            ),
-            backgroundColor: Colors.green,
-          ),
+        GlobalErrorHandler.success(
+          widget.existingFollowUp == null
+              ? "Follow-up saved!"
+              : "Follow-up updated!",
         );
       }
     } catch (e) {
       logger.e("Save error: $e");
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
-        );
+        GlobalErrorHandler.error('Error: $e');
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

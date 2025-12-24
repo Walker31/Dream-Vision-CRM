@@ -5,6 +5,7 @@
 import 'dart:async';
 import 'package:dreamvision/charts/enquiry_status_data.dart';
 import 'package:dreamvision/services/enquiry_service.dart';
+import 'package:dreamvision/utils/global_error_handler.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
@@ -68,6 +69,15 @@ class _AdminDashboardState extends State<AdminDashboard>
     super.dispose();
   }
 
+  void _refreshCountsOnly() {
+    setState(() {
+      _summaryDataFuture = _fetchSummaryData(
+        standard: _selectedStandard,
+        status: _selectedStatus,
+      );
+    });
+  }
+
   Future<Map<String, dynamic>> _fetchSummaryData({
     String? standard,
     String? status,
@@ -76,16 +86,6 @@ class _AdminDashboardState extends State<AdminDashboard>
       final summaryData = await _enquiryService.getEnquiryStatusSummary(
         standard: standard,
         status: status,
-      );
-
-      final List<dynamic> chartSummaryData = summaryData['chart_data'] ?? [];
-
-      _chartDataSource = _buildChartDataFromSummary(chartSummaryData);
-      _unassignedCount = summaryData['unassigned_count'] ?? 0;
-      _assignedCount = summaryData['assigned_count'] ?? 0;
-
-      logger.i(
-        'Enquiry Status Summary Data: chart_data=${_chartDataSource.length}, unassigned=$_unassignedCount, assigned=$_assignedCount',
       );
 
       return summaryData;
@@ -209,24 +209,12 @@ class _AdminDashboardState extends State<AdminDashboard>
 
       try {
         final response = await _enquiryService.bulkUploadEnquiries(filePath);
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(response['message'] ?? 'Upload successful!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        GlobalErrorHandler.success(response['message'] ?? 'Upload successful!');
 
         await _refreshAllData();
       } catch (e, st) {
         logger.e("Bulk upload failed", error: e, stackTrace: st);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Upload failed: $e', maxLines: 5),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 7),
-          ),
-        );
+        GlobalErrorHandler.error('Upload failed: $e');
       } finally {
         if (mounted) setState(() => _isUploading = false);
       }
@@ -331,6 +319,17 @@ class _AdminDashboardState extends State<AdminDashboard>
             return _buildErrorSection(snapshot.error.toString());
           }
 
+          if (snapshot.hasData) {
+
+            final data = snapshot.data!;
+            logger.i('Summary Data fetched: $data');
+            _unassignedCount = data['unassigned_count'] ?? 0;
+            _assignedCount = data['assigned_count'] ?? 0;
+            _chartDataSource = _buildChartDataFromSummary(
+              data['chart_data'] ?? [],
+            );
+          }
+
           return _buildDashboardContent();
         },
       ),
@@ -386,7 +385,6 @@ class _AdminDashboardState extends State<AdminDashboard>
               final filePath = await _enquiryService.downloadEnquiryTemplate();
 
               if (!mounted) return;
-
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: const Text('Template saved in Downloads folder'),
@@ -402,9 +400,7 @@ class _AdminDashboardState extends State<AdminDashboard>
             } catch (e, st) {
               logger.e("Download failed", error: e, stackTrace: st);
               if (mounted) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text('Download failed: $e')));
+                GlobalErrorHandler.error('Download failed: $e');
               }
             }
           },
@@ -488,12 +484,14 @@ class _AdminDashboardState extends State<AdminDashboard>
                 type: EnquiryListType.unassigned,
                 initialStandard: _selectedStandard,
                 initialStatus: _selectedStatus,
+                onChanged: _refreshCountsOnly,
               ),
               PaginatedEnquiryList(
                 key: _assignedListKey,
                 type: EnquiryListType.assigned,
                 initialStandard: _selectedStandard,
                 initialStatus: _selectedStatus,
+                onChanged: _refreshCountsOnly,
               ),
             ],
           ),

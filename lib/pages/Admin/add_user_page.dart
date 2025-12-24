@@ -2,6 +2,7 @@ import 'package:dreamvision/services/admin_user.dart';
 import 'package:dreamvision/widgets/back_button.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../utils/global_error_handler.dart';
 import '../../widgets/password_display_dialog.dart';
 import '../../models/user_model.dart';
 import 'package:logger/logger.dart';
@@ -82,9 +83,8 @@ class _AddUserPageState extends State<AddUserPage> {
         logger.d(widget.user!.toJson());
         await _adminUserService.updateUser(widget.user!.userId, userData);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('User updated successfully'), backgroundColor: Colors.green),
-          );
+          GlobalErrorHandler.success('User updated successfully');
+
           context.pop(true);
         }
       } else {
@@ -117,9 +117,7 @@ class _AddUserPageState extends State<AddUserPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Operation failed: $e'), backgroundColor: Colors.red),
-        );
+        GlobalErrorHandler.error('Operation failed: $e');
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -162,9 +160,7 @@ class _AddUserPageState extends State<AddUserPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to reset password: $e'), backgroundColor: Colors.red),
-        );
+        GlobalErrorHandler.error('Failed to reset password: $e');
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);

@@ -1,4 +1,5 @@
 import 'package:dreamvision/services/auth_service.dart';
+import 'package:dreamvision/utils/global_error_handler.dart';
 import 'package:flutter/material.dart';
 
 import '../../widgets/back_button.dart';
@@ -55,12 +56,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
         );
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Password changed successfully!'),
-              backgroundColor: Theme.of(context).colorScheme.tertiary,
-            ),
-          );
+          GlobalErrorHandler.success( 'Password changed successfully!');
           Navigator.of(context).pop();
         }
       } catch (e) {

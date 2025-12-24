@@ -121,6 +121,8 @@ class AuthService {
     return defaultError;
   }
 
+  
+
   Future<void> _storeTokens(Map<String, dynamic> tokens) async {
     logger.i('Storing tokens');
     await _storage.write(key: 'access_token', value: tokens['access']);
@@ -149,8 +151,7 @@ class AuthService {
       if (response.data is! Map<String, dynamic>) {
         final msg = "Invalid server response format.";
         logger.e(msg);
-        GlobalErrorHandler.showError(msg);
-        throw Exception(msg);
+        GlobalErrorHandler.error(msg);
       }
 
       final responseBody = response.data;
@@ -163,8 +164,8 @@ class AuthService {
           ? _handleDioError(e, 'Failed to login.')
           : e.toString();
       logger.e('Login error → $errorMessage');
-      GlobalErrorHandler.showError(errorMessage);
-      throw Exception(errorMessage);
+      GlobalErrorHandler.error(errorMessage);
+      return {};
     }
   }
 
@@ -179,8 +180,8 @@ class AuthService {
           ? _handleDioError(e, 'Failed to load user profile.')
           : e.toString();
       logger.e('Profile fetch error → $msg');
-      GlobalErrorHandler.showError(msg);
-      throw Exception(msg);
+      GlobalErrorHandler.error(msg);
+      return {};
     }
   }
 
@@ -191,7 +192,7 @@ class AuthService {
     if (refreshToken == null) {
       logger.w('No refresh token found');
       await logout();
-      throw Exception('User not authenticated.');
+      GlobalErrorHandler.info('Session expired. Please login again.');
     }
 
     try {
@@ -215,15 +216,15 @@ class AuthService {
       } else {
         logger.e('Refresh token invalid');
         await logout();
-        GlobalErrorHandler.showError('Session expired. Please login again.');
-        throw Exception('Session expired.');
+        GlobalErrorHandler.info('Session expired. Please login again.');
       }
     } catch (e) {
       logger.e('Refresh token error → $e');
       await logout();
-      GlobalErrorHandler.showError('Session expired. Please login again.');
+      GlobalErrorHandler.error('Session expired. Please login again.');
       return null;
     }
+    return null;
   }
 
   Future<void> signUp({
@@ -254,8 +255,7 @@ class AuthService {
           ? _handleDioError(e, 'Failed to sign up.')
           : e.toString();
       logger.e('Signup error → $msg');
-      GlobalErrorHandler.showError(msg);
-      throw Exception(msg);
+      GlobalErrorHandler.error(msg);
     }
   }
 
@@ -280,8 +280,8 @@ class AuthService {
           ? _handleDioError(e, 'Failed to change password.')
           : e.toString();
       logger.e('Password change error → $msg');
-      GlobalErrorHandler.showError(msg);
-      throw Exception(msg);
+      GlobalErrorHandler.error(msg);
+      
     }
   }
 }

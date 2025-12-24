@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:dreamvision/models/enquiry_model.dart';
 import 'package:dreamvision/services/enquiry_service.dart';
+import 'package:dreamvision/utils/global_error_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:logger/logger.dart';
@@ -11,12 +12,14 @@ class PaginatedEnquiryList extends StatefulWidget {
   final EnquiryListType type;
   final String? initialStandard;
   final String? initialStatus;
+  final VoidCallback? onChanged;
 
   const PaginatedEnquiryList({
     super.key,
     required this.type,
     this.initialStandard,
     this.initialStatus,
+    this.onChanged,
   });
 
   @override
@@ -74,7 +77,7 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
     });
 
     try {
-      // 1. Use 'dynamic' here so we don't crash if it's a List or Map
+      // 1. Declare as dynamic so Dart doesn't crash when receiving a List
       final dynamic response;
 
       if (widget.type == EnquiryListType.unassigned) {
@@ -93,25 +96,24 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
         );
       }
 
-      // 2. Safe parsing: Handle both Map (paginated) and List (direct)
-      final List<dynamic> resultsList;
+      // 2. Extract results and pagination status safely
+      List<dynamic> resultsList = [];
       bool hasNext = false;
 
       if (response is Map<String, dynamic>) {
-        // It's a paginated response
-        resultsList = response['results'] ?? [];
+        // Logic for standard paginated Map: {"results": [...], "next": "..."}
+        resultsList = response['results'] is List ? response['results'] : [];
         hasNext = response['next'] != null;
       } else if (response is List) {
-        // It's a direct list
+        // Logic for when the backend returns a raw List (common when empty)
         resultsList = response;
-        hasNext =
-            false; // Direct lists usually don't support pagination this way
-      } else {
-        resultsList = [];
+        hasNext = false;
       }
 
+      // 3. Map to Enquiry objects with a safe cast
       final newEnquiries = resultsList
-          .map<Enquiry>((e) => Enquiry.fromJson(e))
+          .where((e) => e != null && e is Map<String, dynamic>)
+          .map<Enquiry>((e) => Enquiry.fromJson(e as Map<String, dynamic>))
           .toList();
 
       if (!mounted) return;
@@ -128,9 +130,7 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
     } catch (e) {
       _logger.e("Failed to fetch enquiries: $e");
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error: $e")));
+        GlobalErrorHandler.error('Failed to load enquiries');
       }
     } finally {
       if (mounted) {
@@ -298,7 +298,13 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
                   ),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(12),
-                    onTap: () => context.push("/enquiry/${enquiry.id}"),
+                    onTap: () async {
+                      await context.push("/enquiry/${enquiry.id}");
+                      if (mounted) {
+                        _fetchPage(1);
+                        widget.onChanged?.call();
+                      }
+                    },
                     child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: Column(
@@ -380,11 +386,15 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
                                   size: 20,
                                 ),
                                 tooltip: "View Follow-ups",
-                                onPressed: () {
-                                  context.push(
+                                onPressed: () async {
+                                  await context.push(
                                     '/follow-ups/${enquiry.id}',
                                     extra: fullName,
                                   );
+                                  if (mounted) {
+                                    _fetchPage(1);
+                                    widget.onChanged?.call();
+                                  }
                                 },
                               ),
                             ],

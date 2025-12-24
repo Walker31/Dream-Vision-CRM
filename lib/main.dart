@@ -40,7 +40,7 @@ void main() {
 
       FlutterError.onError = (FlutterErrorDetails details) {
         FlutterError.presentError(details);
-        GlobalErrorHandler.showError(details.exceptionAsString());
+        GlobalErrorHandler.error(details.exceptionAsString());
       };
 
       runApp(
@@ -54,7 +54,7 @@ void main() {
       );
     },
     (error, stack) {
-      GlobalErrorHandler.showError(error.toString());
+      GlobalErrorHandler.error(error.toString());
     },
   );
 }

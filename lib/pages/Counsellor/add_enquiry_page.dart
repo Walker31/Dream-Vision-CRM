@@ -6,6 +6,7 @@ import 'package:dreamvision/widgets/back_button.dart';
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
 import '../../models/enquiry_form_model.dart';
+import '../../utils/global_error_handler.dart';
 import '../../widgets/academic_form_widget.dart';
 import '../../widgets/form_navigation_controls.dart';
 
@@ -127,12 +128,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
     } catch (e) {
       _logger.e('Failed to load initial data: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: Could not load form data. $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        GlobalErrorHandler.error('Could not load form data. $e');
         Navigator.of(context).pop();
       }
     }
@@ -200,24 +196,14 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
 
       if (mounted) {
         Navigator.of(context).pop(true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Enquiry ${_isEditMode ? 'updated' : 'submitted'} successfully!',
-            ),
-            backgroundColor: Colors.green,
-          ),
+        GlobalErrorHandler.success(
+          'Enquiry ${_isEditMode ? 'updated' : 'submitted'} successfully!',
         );
       }
     } catch (e) {
       _logger.e('Failed to submit enquiry: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error submitting form: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        GlobalErrorHandler.error('Error submitting form: $e');
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);

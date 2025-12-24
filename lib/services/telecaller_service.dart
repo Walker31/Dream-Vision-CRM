@@ -1,7 +1,7 @@
 import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:dreamvision/config/constants.dart';
-import 'package:dreamvision/utils/global_error_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
@@ -30,15 +30,13 @@ class TelecallerService {
           final token = await _storage.read(key: 'access_token');
 
           if (token == null) {
-            final error = DioException(
-              requestOptions: options,
-              message: 'Authentication token not found. Please log in.',
-              error: const SocketException(
-                'Authentication token not found. Please log in.',
+            return handler.reject(
+              DioException(
+                requestOptions: options,
+                message: 'Authentication token not found. Please log in.',
+                type: DioExceptionType.cancel,
               ),
-              type: DioExceptionType.cancel,
             );
-            return handler.reject(error);
           }
 
           options.headers['Authorization'] = 'Bearer $token';
@@ -49,8 +47,9 @@ class TelecallerService {
   }
 
   // ---------------------------------------------------------------------------
-  // UPDATED GLOBAL ERROR HANDLER (MATCHING AuthService & EnquiryService)
+  // ERROR HANDLING (SERVICE-ONLY)
   // ---------------------------------------------------------------------------
+
   String _handleDioError(DioException e) {
     _logger.e(
       'API Error [${e.response?.statusCode ?? 'N/A'}]: ${e.message}',
@@ -58,27 +57,26 @@ class TelecallerService {
       stackTrace: e.stackTrace,
     );
 
-    // 🔥 1. Network issues
+    // Network issues
     if (e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.sendTimeout ||
         e.type == DioExceptionType.receiveTimeout) {
       return 'Connection timed out. Please check your internet.';
     }
+
     if (e.error is SocketException || e.type == DioExceptionType.unknown) {
       return 'No internet connection. Please check your network.';
     }
 
-    // 🔥 2. Server response issues
+    // Server response
     if (e.response != null) {
-      final int statusCode = e.response!.statusCode ?? 0;
-      final dynamic data = e.response!.data;
+      final statusCode = e.response!.statusCode ?? 0;
+      final data = e.response!.data;
 
-      // 500 errors → generic message
       if (statusCode >= 500) {
         return 'Server error ($statusCode). Please try again later.';
       }
 
-      // HTML response check
       if (data is String) {
         if (data.toLowerCase().contains('<!doctype html>') ||
             data.toLowerCase().contains('<html')) {
@@ -87,20 +85,18 @@ class TelecallerService {
         return data;
       }
 
-      // Django/DRF JSON validation messages
       if (data is Map) {
         if (data['detail'] != null) return data['detail'].toString();
         if (data['message'] != null) return data['message'].toString();
         if (data['error'] != null) return data['error'].toString();
+
         if (data['non_field_errors'] != null) {
           return (data['non_field_errors'] as List).join('\n');
         }
 
-        // Field errors
         if (data.isNotEmpty) {
           final key = data.keys.first;
           final val = data[key];
-
           final formattedKey = key.toString().replaceAll('_', ' ').capitalize();
 
           if (val is List) {
@@ -113,6 +109,16 @@ class TelecallerService {
 
     return 'Something went wrong. Please try again.';
   }
+
+  Never _rethrow(Object e) {
+    if (e is DioException) {
+      throw Exception(_handleDioError(e));
+    }
+    throw Exception(e.toString());
+  }
+
+  // ---------------------------------------------------------------------------
+  // API METHODS
   // ---------------------------------------------------------------------------
 
   Future<List<dynamic>> getCallActivityData(DateTimeRange dateRange) async {
@@ -139,18 +145,12 @@ class TelecallerService {
 
       return [];
     } catch (e) {
-      /// 🔥 SHOW GLOBAL SNACKBAR
-      final msg = e is DioException ? _handleDioError(e) : e.toString();
-      GlobalErrorHandler.showError(msg);
-
-      throw Exception(msg);
+      _rethrow(e);
     }
   }
 }
 
 extension StringExtension on String {
-  String capitalize() {
-    if (isEmpty) return this;
-    return "${this[0].toUpperCase()}${substring(1)}";
-  }
+  String capitalize() =>
+      isEmpty ? this : "${this[0].toUpperCase()}${substring(1)}";
 }

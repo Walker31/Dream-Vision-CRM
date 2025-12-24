@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:dreamvision/config/constants.dart';
-import 'package:dreamvision/utils/global_error_handler.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:logger/logger.dart';
 import 'package:path_provider/path_provider.dart';
@@ -13,15 +12,16 @@ import 'package:permission_handler/permission_handler.dart';
 class EnquiryService {
   static final EnquiryService _instance = EnquiryService._internal();
   factory EnquiryService() => _instance;
-  Logger logger = Logger();
+
+  final Logger logger = Logger();
+  final _storage = const FlutterSecureStorage();
+  late final Dio _dio;
+
+  static const String _baseUrl = '$baseUrl/crm';
 
   EnquiryService._internal() {
     _init();
   }
-
-  static const String _baseUrl = '$baseUrl/crm';
-  final _storage = const FlutterSecureStorage();
-  late Dio _dio;
 
   Future<void> _init() async {
     _dio = Dio(
@@ -36,12 +36,10 @@ class EnquiryService {
         onRequest: (options, handler) async {
           final token = await _storage.read(key: 'access_token');
           if (token == null) {
-            final msg = "Authentication token missing. Please login again.";
-            GlobalErrorHandler.showError(msg);
             return handler.reject(
               DioException(
                 requestOptions: options,
-                message: msg,
+                message: 'Authentication token missing. Please login again.',
                 type: DioExceptionType.cancel,
               ),
             );
@@ -53,19 +51,24 @@ class EnquiryService {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // ERROR HANDLING (SERVICE-ONLY)
+  // ---------------------------------------------------------------------------
+
   String _handleDioError(DioException e) {
     if (e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.sendTimeout ||
         e.type == DioExceptionType.receiveTimeout) {
       return 'Connection timeout. Please check your internet.';
     }
+
     if (e.error is SocketException || e.type == DioExceptionType.unknown) {
       return 'No internet connection.';
     }
 
     if (e.response != null) {
-      final int statusCode = e.response!.statusCode ?? 0;
-      final dynamic data = e.response!.data;
+      final statusCode = e.response!.statusCode ?? 0;
+      final data = e.response!.data;
 
       if (statusCode >= 500) {
         return 'Server error ($statusCode). Please try again later.';
@@ -77,16 +80,16 @@ class EnquiryService {
         if (data['error'] != null) return data['error'].toString();
 
         if (data.isNotEmpty) {
-          final firstKey = data.keys.first;
-          final firstValue = data[firstKey];
-          if (firstValue is List) return "$firstKey: ${firstValue.first}";
-          return "$firstKey: $firstValue";
+          final key = data.keys.first;
+          final value = data[key];
+          if (value is List) return "$key: ${value.first}";
+          return "$key: $value";
         }
       }
 
       if (data is String) {
         if (data.toLowerCase().contains('<html')) {
-          return 'Server Error: The server returned an invalid response.';
+          return 'Server returned an invalid response.';
         }
         return data;
       }
@@ -95,19 +98,18 @@ class EnquiryService {
     return 'Something went wrong. Please try again.';
   }
 
-  Never _rethrowWithGlobalError(Object e) {
+  Never _rethrow(Object e) {
     if (e is DioException) {
-      final msg = _handleDioError(e);
-      GlobalErrorHandler.showError(msg);
-      throw Exception(msg);
-    } else {
-      final msg = e.toString();
-      GlobalErrorHandler.showError(msg);
-      throw Exception(msg);
+      throw Exception(_handleDioError(e));
     }
+    throw Exception(e.toString());
   }
 
-  Future<Map<String, dynamic>> _getPaginatedList(
+  // ---------------------------------------------------------------------------
+  // PAGINATION
+  // ---------------------------------------------------------------------------
+
+  Future<dynamic> _getPaginatedList(
     String endpoint, {
     int page = 1,
     String? query,
@@ -126,11 +128,11 @@ class EnquiryService {
       );
       return response.data ?? {};
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
 
-  Future<Map<String, dynamic>> getUnassignedEnquiries({
+  Future<dynamic> getUnassignedEnquiries({
     int page = 1,
     String? query,
     String? standard,
@@ -143,7 +145,7 @@ class EnquiryService {
     status: status,
   );
 
-  Future<Map<String, dynamic>> getAssignedEnquiries({
+  Future<dynamic> getAssignedEnquiries({
     int page = 1,
     String? query,
     String? standard,
@@ -156,43 +158,37 @@ class EnquiryService {
     status: status,
   );
 
-  Future<Map<String, dynamic>> getTelecallerEnquiries({
-    int page = 1,
-    String? status,
-  }) => _getPaginatedList('/enquiries/my_leads/', page: page, status: status);
+  Future<dynamic> getTelecallerEnquiries({int page = 1, String? status}) =>
+      _getPaginatedList('/enquiries/my_leads/', page: page, status: status);
+
+  // ---------------------------------------------------------------------------
+  // ENQUIRIES
+  // ---------------------------------------------------------------------------
 
   Future<Map<String, dynamic>> getEnquiryById(int enquiryId) async {
     try {
       final response = await _dio.get('/enquiries/$enquiryId/');
       return response.data ?? {};
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
 
   Future<void> _ensureStoragePermission() async {
-    if (Platform.isAndroid) {
-      final androidInfo = await DeviceInfoPlugin().androidInfo;
-      final sdkInt = androidInfo.version.sdkInt;
+    if (!Platform.isAndroid) return;
 
-      if (sdkInt >= 30) {
-        if (!await Permission.manageExternalStorage.isGranted) {
-          final result = await Permission.manageExternalStorage.request();
-          if (!result.isGranted) {
-            final msg = 'Storage permission denied';
-            GlobalErrorHandler.showError(msg);
-            throw Exception(msg);
-          }
-        }
-      } else {
-        if (!await Permission.storage.isGranted) {
-          final result = await Permission.storage.request();
-          if (!result.isGranted) {
-            final msg = 'Storage permission denied';
-            GlobalErrorHandler.showError(msg);
-            throw Exception(msg);
-          }
-        }
+    final androidInfo = await DeviceInfoPlugin().androidInfo;
+    final sdkInt = androidInfo.version.sdkInt;
+
+    if (sdkInt >= 30) {
+      final status = await Permission.manageExternalStorage.request();
+      if (!status.isGranted) {
+        throw Exception('Storage permission denied');
+      }
+    } else {
+      final status = await Permission.storage.request();
+      if (!status.isGranted) {
+        throw Exception('Storage permission denied');
       }
     }
   }
@@ -207,9 +203,7 @@ class EnquiryService {
       );
 
       if (response.statusCode != 200) {
-        final msg = 'Failed: HTTP ${response.statusCode}';
-        GlobalErrorHandler.showError(msg);
-        throw Exception(msg);
+        throw Exception('Failed: HTTP ${response.statusCode}');
       }
 
       final bytes = Uint8List.fromList(List<int>.from(response.data));
@@ -236,7 +230,7 @@ class EnquiryService {
 
       return filePath;
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
 
@@ -248,21 +242,16 @@ class EnquiryService {
       final response = await _dio.patch('/enquiries/$enquiryId/', data: data);
       return response.data ?? {};
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
 
-  Future<Map<String, dynamic>> getEnquiries({int page = 1, String? query}) {
-    return _getPaginatedList('/enquiries/', page: page, query: query);
-  }
-
-  // ✅ FIXED — correct soft delete route for enquiries
   Future<Map<String, dynamic>> softDeleteEnquiry(int enquiryId) async {
     try {
       final response = await _dio.patch('/enquiries/$enquiryId/soft_delete/');
       return response.data ?? {};
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
 
@@ -271,7 +260,7 @@ class EnquiryService {
       final response = await _dio.post('/enquiries/', data: data);
       return response.data ?? {};
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
 
@@ -283,7 +272,7 @@ class EnquiryService {
       );
       return response.data ?? [];
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
 
@@ -298,9 +287,13 @@ class EnquiryService {
       );
       return response.data ?? {};
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // FOLLOW UPS
+  // ---------------------------------------------------------------------------
 
   Future<List<dynamic>> getFollowUpsForEnquiry(int enquiryId) async {
     try {
@@ -310,12 +303,11 @@ class EnquiryService {
       );
 
       final body = response.data;
-
       if (body is Map && body['results'] != null) return body['results'];
       if (body is List) return body;
       return [];
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
 
@@ -324,7 +316,7 @@ class EnquiryService {
       final response = await _dio.post('/follow-ups/', data: data);
       return response.data ?? {};
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
 
@@ -336,7 +328,7 @@ class EnquiryService {
       final response = await _dio.patch('/follow-ups/$followUpId/', data: data);
       return response.data ?? {};
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
 
@@ -345,11 +337,14 @@ class EnquiryService {
       final response = await _dio.patch('/follow-ups/$followUpId/soft_delete/');
       return response.data ?? {};
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
 
-  // ✅ NEW — AcademicPerformance soft delete
+  // ---------------------------------------------------------------------------
+  // ACADEMIC
+  // ---------------------------------------------------------------------------
+
   Future<Map<String, dynamic>> softDeleteAcademic(int academicId) async {
     try {
       final response = await _dio.patch(
@@ -357,16 +352,20 @@ class EnquiryService {
       );
       return response.data ?? {};
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // MISC
+  // ---------------------------------------------------------------------------
 
   Future<List<dynamic>> getSchools() async {
     try {
       final response = await _dio.get('/schools/');
       return response.data ?? [];
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
 
@@ -375,7 +374,7 @@ class EnquiryService {
       final response = await _dio.get('/statuses/');
       return response.data ?? [];
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
 
@@ -384,7 +383,7 @@ class EnquiryService {
       final response = await _dio.get('/sources/');
       return response.data ?? [];
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
 
@@ -393,7 +392,7 @@ class EnquiryService {
       final response = await _dio.get('/dashboard-stats/');
       return response.data ?? {};
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
 
@@ -403,14 +402,8 @@ class EnquiryService {
   }) async {
     try {
       final params = <String, dynamic>{};
-
-      if (standard != null && standard.isNotEmpty) {
-        params['standard'] = standard;
-      }
-
-      if (status != null && status.isNotEmpty) {
-        params['status'] = status;
-      }
+      if (standard?.isNotEmpty == true) params['standard'] = standard;
+      if (status?.isNotEmpty == true) params['status'] = status;
 
       final response = await _dio.get(
         '/enquiries/status_summary/',
@@ -421,24 +414,25 @@ class EnquiryService {
       logger.d('Enquiry Status Summary Data: $data');
 
       if (data is Map<String, dynamic>) return data;
-
       if (data is List) {
         return {"chart_data": data, "unassigned_count": 0, "assigned_count": 0};
       }
 
       return {"chart_data": [], "unassigned_count": 0, "assigned_count": 0};
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // BULK UPLOAD
+  // ---------------------------------------------------------------------------
 
   Future<Map<String, dynamic>> bulkUploadEnquiries(String filePath) async {
     try {
       final file = File(filePath);
       if (!file.existsSync()) {
-        final msg = 'File not found.';
-        GlobalErrorHandler.showError(msg);
-        throw Exception(msg);
+        throw Exception('File not found.');
       }
 
       final formData = FormData.fromMap({
@@ -454,9 +448,13 @@ class EnquiryService {
       );
       return response.data ?? {};
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // ASSIGN
+  // ---------------------------------------------------------------------------
 
   Future<List<dynamic>> getAssignableUsers({
     required String role,
@@ -470,9 +468,7 @@ class EnquiryService {
       } else if (role.toLowerCase() == 'telecaller') {
         endpoint = '$baseUrl/users/admin/list-telecallers/';
       } else {
-        final msg = 'Invalid role specified.';
-        GlobalErrorHandler.showError(msg);
-        throw Exception(msg);
+        throw Exception('Invalid role specified.');
       }
 
       final url = Uri.parse(endpoint).replace(
@@ -487,8 +483,12 @@ class EnquiryService {
 
       return [];
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
+  }
+
+  Future<dynamic> getEnquiries({int page = 1, String? query}) {
+    return _getPaginatedList('/enquiries/', page: page, query: query);
   }
 
   Future<Map<String, dynamic>> assignEnquiry({
@@ -508,7 +508,7 @@ class EnquiryService {
       );
       return response.data ?? {};
     } catch (e) {
-      _rethrowWithGlobalError(e);
+      _rethrow(e);
     }
   }
 }

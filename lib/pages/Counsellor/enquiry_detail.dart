@@ -2,6 +2,7 @@
 
 import 'package:dreamvision/models/enquiry_model.dart';
 import 'package:dreamvision/services/enquiry_service.dart';
+import 'package:dreamvision/utils/global_error_handler.dart';
 import 'package:dreamvision/widgets/back_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
@@ -44,12 +45,7 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
     } catch (e) {
       _logger.e('Failed to fetch enquiry: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error loading enquiry: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        GlobalErrorHandler.error('Error loading enquiry: $e');
       }
 
       rethrow;
@@ -142,12 +138,8 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Successfully assigned to $role!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        GlobalErrorHandler.success(
+          'Successfully assigned to $role!');
         _refreshEnquiryData();
       }
     } catch (e) {
@@ -156,12 +148,7 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
       }
       _logger.e('Failed to assign $role: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error assigning $role: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        GlobalErrorHandler.error('Error assigning $role: $e');
       }
     }
   }
@@ -178,22 +165,10 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
 
       if (mounted) Navigator.pop(context); // close loader
       if (mounted) Navigator.pop(context, true); // go back
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Enquiry deleted successfully."),
-          backgroundColor: Colors.green,
-        ),
-      );
+      GlobalErrorHandler.success('Enquiry deleted successfully!');
     } catch (e) {
       if (mounted) Navigator.pop(context);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Failed to delete enquiry: $e"),
-          backgroundColor: Colors.red,
-        ),
-      );
+      GlobalErrorHandler.error('Failed to delete enquiry');
     }
   }
 

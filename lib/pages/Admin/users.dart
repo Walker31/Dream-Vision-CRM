@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:logger/logger.dart';
 import '../../models/user_model.dart';
 import '../../services/admin_user.dart';
+import '../../utils/global_error_handler.dart';
 
 class UserListPage extends StatefulWidget {
   const UserListPage({super.key});
@@ -84,21 +85,16 @@ class _UserListPageState extends State<UserListPage> {
           _allUsers.removeWhere((u) => u.userId == user.userId);
           _filterUsers();
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${user.name} has been deleted.'),
-            backgroundColor: Colors.green,
-          ),
+        GlobalErrorHandler.show(
+          '${user.name} removed successfully.',
+          type: AppMessageType.success,
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to delete user: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        GlobalErrorHandler.show(e.toString(), type: AppMessageType.error);
+
+        logger.e("Delete operation failed: $e");
       }
     }
   }
