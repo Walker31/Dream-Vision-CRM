@@ -202,7 +202,10 @@ class _AllEnquiriesPageState extends State<AllEnquiriesPage> {
               child: Center(child: CircularProgressIndicator()),
             );
           }
-          return _EnquiryListItem(enquiry: _enquiries[index]);
+          return _EnquiryListItem(
+            enquiry: _enquiries[index],
+            onRefresh: _refresh,
+          );
         },
       ),
     );
@@ -211,14 +214,18 @@ class _AllEnquiriesPageState extends State<AllEnquiriesPage> {
 
 class _EnquiryListItem extends StatelessWidget {
   final Enquiry enquiry;
+  final Future<void> Function() onRefresh;
 
-  const _EnquiryListItem({required this.enquiry});
+  const _EnquiryListItem({
+    required this.enquiry,
+    required this.onRefresh,
+  });
 
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
       case 'interested':
         return Colors.blue.shade600;
-      case 'converted':
+      case 'confirmed':
         return Colors.green.shade600;
       case 'needs follow-up':
       case 'follow-up':
@@ -323,7 +330,10 @@ class _EnquiryListItem extends StatelessWidget {
             ),
           ],
         ),
-        onTap: () => context.push('/enquiry/${enquiry.id}'),
+        onTap: () async {
+          await context.push('/enquiry/${enquiry.id}');
+          await onRefresh();
+        },
       ),
     );
   }

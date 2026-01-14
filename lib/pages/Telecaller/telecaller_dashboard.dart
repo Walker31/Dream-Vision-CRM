@@ -2,6 +2,7 @@ import 'package:dreamvision/models/enquiry_model.dart';
 import 'package:dreamvision/services/enquiry_service.dart';
 import 'package:dreamvision/pages/Telecaller/follow_up_sheet.dart';
 import 'package:dreamvision/utils/global_error_handler.dart';
+import 'package:dreamvision/utils/error_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -18,6 +19,7 @@ class TelecallerDashboard extends StatefulWidget {
 class _TelecallerDashboardState extends State<TelecallerDashboard> {
   final EnquiryService _enquiryService = EnquiryService();
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
   Logger logger = Logger();
 
   List<Enquiry> _enquiries = [];
@@ -27,22 +29,41 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
   bool _isLoadingMore = false;
   bool _isFirstLoad = true;
   String? _error;
+  String _searchQuery = '';
+  Map<String, int> _statusCounts = {};
+  int _cnrCount = 0;
+  bool _isCnrFilterEnabled = false;
 
-  final List<String> _filters = ['All', 'Interested', 'Follow-up', 'Closed'];
-  String _selectedFilter = 'All';
+  final List<String> _statusOptions = [
+    'Interested',
+    'Follow-Up',
+    'Closed',
+    'Confirmed',
+  ];
+  final Set<String> _selectedStatuses = {};
 
   @override
   void initState() {
     super.initState();
     _fetchEnquiries(page: 1);
+    _fetchStatusCounts();
     _scrollController.addListener(_onScroll);
+    _searchController.addListener(_onSearchChanged);
   }
 
   @override
   void dispose() {
     _scrollController.removeListener(_onScroll);
+    _searchController.removeListener(_onSearchChanged);
     _scrollController.dispose();
+    _searchController.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged() {
+    setState(() => _searchQuery = _searchController.text);
+    _refresh();
+    _fetchStatusCounts();
   }
 
   void _onScroll() {
@@ -65,9 +86,21 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
     });
 
     try {
-      final response = await _enquiryService.getTelecallerEnquiries(
-        page: page,
-        status: _selectedFilter == 'All' ? null : _selectedFilter,
+      final retryPolicy = RetryPolicy();
+
+      // Build status filter: if no statuses selected or all selected, pass null
+      String? statusFilter;
+      if (_selectedStatuses.isNotEmpty) {
+        statusFilter = _selectedStatuses.join(',');
+      }
+
+      final response = await retryPolicy.execute(
+        () => _enquiryService.getTelecallerEnquiries(
+          page: page,
+          status: statusFilter,
+          search: _searchQuery.isNotEmpty ? _searchQuery : null,
+          cnr: _isCnrFilterEnabled ? 'true' : null,
+        ),
       );
 
       final results = response['results'] as List<dynamic>;
@@ -111,7 +144,24 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
       }
     } catch (e) {
       logger.e("Failed to fetch dashboard data: $e");
-      if (mounted) setState(() => _error = e.toString());
+      final userMessage = ErrorHelper.getUserMessage(e);
+      final isNetworkError = ErrorHelper.isNetworkError(e);
+
+      if (!mounted) return;
+
+      setState(() => _error = userMessage);
+
+      // Show retry dialog for network errors
+      if (isNetworkError && mounted) {
+        final shouldRetry = await ErrorHelper.showRetryDialog(
+          context,
+          userMessage,
+          title: 'Connection Error',
+        );
+        if (shouldRetry == true && mounted) {
+          _fetchEnquiries(page: page);
+        }
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -126,10 +176,43 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
     await _fetchEnquiries(page: 1);
   }
 
-  void _onFilterChanged(String filter) {
-    if (_selectedFilter == filter) return;
-    setState(() => _selectedFilter = filter);
-    _refresh();
+  Future<void> _fetchStatusCounts() async {
+    try {
+      final retryPolicy = RetryPolicy();
+
+      // Always fetch ALL status counts regardless of filters
+      // This ensures the checkbox list shows accurate counts for all statuses
+      final response = await retryPolicy.execute(
+        () => _enquiryService.getStatusCounts(
+          search: _searchQuery.isNotEmpty ? _searchQuery : null,
+          // DO NOT pass status filter here - we want counts for ALL statuses
+        ),
+      );
+      final List<dynamic> counts = response['status_counts'] ?? [];
+      final Map<String, int> countMap = {};
+      for (var item in counts) {
+        if (item is Map<String, dynamic> && item['status'] != null) {
+          final count = item['count'];
+          countMap[item['status']] = count is int ? count : 0;
+        }
+      }
+
+      // Extract CNR count
+      final cnrCountValue = response['cnr_count'];
+      final cnrCount = cnrCountValue is int ? cnrCountValue : 0;
+
+      if (mounted) {
+        setState(() {
+          _statusCounts = countMap;
+          _cnrCount = cnrCount;
+        });
+      }
+    } catch (e) {
+      logger.e("Failed to fetch status counts: $e");
+      if (mounted) {
+        setState(() => _statusCounts = {});
+      }
+    }
   }
 
   Future<void> _makePhoneCall(String phoneNumber) async {
@@ -142,13 +225,22 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
     }
   }
 
-  void _showAddFollowUpForm(BuildContext context, Enquiry enquiry) {
-    showModalBottomSheet(
+  Future<void> _showAddFollowUpForm(
+    BuildContext context,
+    Enquiry enquiry,
+  ) async {
+    final result = await showModalBottomSheet<bool?>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => AddFollowUpSheet(enquiry: enquiry),
     );
+
+    // If follow-up was successfully created/updated, refresh the dashboard
+    if (mounted && result == true) {
+      _refresh();
+      _fetchStatusCounts();
+    }
   }
 
   @override
@@ -197,7 +289,13 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
         foregroundColor: cs.onPrimary,
         shape: const CircleBorder(),
         child: const Icon(Icons.add),
-        onPressed: () => context.push('/add-enquiry'),
+        onPressed: () async {
+          final result = await context.push('/add-enquiry');
+          if (result == true && mounted) {
+            _refresh();
+            _fetchStatusCounts();
+          }
+        },
       ),
     );
   }
@@ -214,9 +312,19 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('Error: $_error', style: TextStyle(color: cs.error)),
+            Icon(Icons.error_outline, size: 48, color: cs.error),
             const SizedBox(height: 16),
-            ElevatedButton(onPressed: _refresh, child: const Text('Retry')),
+            Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: cs.onSurface, fontSize: 16),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: _refresh,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Try Again'),
+            ),
           ],
         ),
       );
@@ -231,54 +339,222 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
         children: [
           const TelecallerCallChart(),
           const SizedBox(height: 24),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search by name, phone, email...',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                              _refresh();
+                            },
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    filled: true,
+                    fillColor: cs.surfaceContainerHighest.withValues(
+                      alpha: 0.5,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+              ),
+
+              IconButton(
+                icon: const Icon(Icons.filter_list_rounded),
+                tooltip: 'Filter',
+                onPressed: () {
+                  showModalBottomSheet(
+                    context: context,
+                    builder: (BuildContext context) {
+                      return StatefulBuilder(
+                        builder: (BuildContext context, StateSetter setModalState) {
+                          return Container(
+                            decoration: BoxDecoration(
+                              color: cs.surface,
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(20),
+                                topRight: Radius.circular(20),
+                              ),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Header
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'Filter by Status',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.titleLarge,
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.close),
+                                        onPressed: () => Navigator.pop(context),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+
+                                  // Checkbox list
+                                  Flexible(
+                                    child: SingleChildScrollView(
+                                      child: Column(
+                                        children: [
+                                          ..._statusOptions.map((status) {
+                                            final isSelected = _selectedStatuses
+                                                .contains(status);
+                                            return CheckboxListTile(
+                                              title: Text(
+                                                status,
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.bodyMedium,
+                                              ),
+                                              subtitle: Text(
+                                                'Count: ${_statusCounts[status] ?? 0}',
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.bodySmall,
+                                              ),
+                                              value: isSelected,
+                                              onChanged: (bool? value) {
+                                                setModalState(() {
+                                                  if (value == true) {
+                                                    _selectedStatuses.add(
+                                                      status,
+                                                    );
+                                                  } else {
+                                                    _selectedStatuses.remove(
+                                                      status,
+                                                    );
+                                                  }
+                                                });
+                                              },
+                                              controlAffinity:
+                                                  ListTileControlAffinity
+                                                      .leading,
+                                            );
+                                          }),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  // Divider
+                                  const Divider(height: 24),
+
+                                  // CNR Filter
+                                  CheckboxListTile(
+                                    title: Text(
+                                      'CNR (Call Not Received)',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium,
+                                    ),
+                                    subtitle: Text(
+                                      'Count: $_cnrCount',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                    value: _isCnrFilterEnabled,
+                                    onChanged: (bool? value) {
+                                      setModalState(() {
+                                        _isCnrFilterEnabled = value ?? false;
+                                      });
+                                    },
+                                    controlAffinity:
+                                        ListTileControlAffinity.leading,
+                                  ),
+
+                                  const SizedBox(height: 24),
+
+                                  // Action buttons
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: OutlinedButton.icon(
+                                          icon: const Icon(Icons.clear),
+                                          label: const Text('Clear All'),
+                                          onPressed: () {
+                                            setModalState(() {
+                                              _selectedStatuses.clear();
+                                              _isCnrFilterEnabled = false;
+                                            });
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: FilledButton.icon(
+                                          icon: const Icon(Icons.check),
+                                          label: const Text('Apply'),
+                                          onPressed: () {
+                                            Navigator.pop(context);
+                                            _refresh();
+                                            _fetchStatusCounts();
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
+                style: IconButton.styleFrom(
+                  backgroundColor: cs.surfaceContainerHighest.withValues(
+                    alpha: 0.5,
+                  ),
+                  foregroundColor: cs.onSurfaceVariant,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
           const Text(
             'Assigned Leads',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
-          _buildFilterChips(),
-          const SizedBox(height: 16),
           _buildLeadsList(),
         ],
       ),
     );
   }
 
-  Widget _buildFilterChips() {
-    final cs = Theme.of(context).colorScheme;
-
-    return Wrap(
-      spacing: 8,
-      runSpacing: 4,
-      children: _filters.map((filter) {
-        final bool isSelected = _selectedFilter == filter;
-
-        return AnimatedScale(
-          scale: isSelected ? 1.1 : 1.0,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-          child: FilterChip(
-            label: Text(filter),
-            selected: isSelected,
-            showCheckmark: false,
-            selectedColor: cs.primary,
-            labelStyle: TextStyle(
-              color: isSelected ? cs.onPrimary : cs.onSurfaceVariant,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            ),
-            backgroundColor: cs.surfaceContainerHighest.withValues(alpha: 0.5),
-            side: BorderSide.none,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            onSelected: (_) => _onFilterChanged(filter),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _buildNextFollowUpBadge(BuildContext context, String isoDateString) {
+  Widget _buildNextFollowUpBadge(
+    BuildContext context,
+    String isoDateString,
+    String status,
+  ) {
     final cs = Theme.of(context).colorScheme;
 
     DateTime targetDate;
@@ -301,7 +577,9 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
     late String label;
     late IconData icon;
 
-    if (targetDate.isBefore(now)) {
+    // Skip overdue display for Converted enquiries (they're complete)
+    final isConverted = status.isNotEmpty && status == 'Converted';
+    if (targetDate.isBefore(now) && !isConverted) {
       bgColor = cs.errorContainer;
       textColor = cs.error;
       label = "Overdue";
@@ -367,7 +645,7 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
               Icon(Icons.search_off_rounded, size: 48, color: cs.outline),
               const SizedBox(height: 8),
               Text(
-                'No leads found for "$_selectedFilter".',
+                'No leads found.',
                 style: TextStyle(color: cs.onSurfaceVariant, fontSize: 16),
               ),
             ],
@@ -376,152 +654,197 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
       );
     }
 
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: _enquiries.length + (_hasNextPage ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index == _enquiries.length) {
-          return _hasNextPage
-              ? const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              : const SizedBox.shrink();
-        }
-
-        final enquiry = _enquiries[index];
-        final fullName = '${enquiry.firstName} ${enquiry.lastName ?? ''}'
-            .trim();
-        final status = enquiry.currentStatusName ?? 'Unknown';
-
-        final animated = index < _animateItems.length
-            ? _animateItems[index]
-            : true;
-
-        return AnimatedOpacity(
-          opacity: animated ? 1 : 0,
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.easeOut,
-          child: AnimatedSlide(
-            offset: animated ? Offset.zero : const Offset(0, 0.12),
-            duration: const Duration(milliseconds: 400),
-            curve: Curves.easeOut,
-            child: Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(
-                  color: cs.outlineVariant.withValues(alpha: 0.4),
-                ),
+    return Column(
+      children: [
+        // Show loading spinner when fetching enquiries
+        if (_isLoadingMore && _enquiries.isEmpty)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              child: Column(
+                children: [
+                  CircularProgressIndicator(
+                    strokeWidth: 3,
+                    valueColor: AlwaysStoppedAnimation<Color>(cs.primary),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Fetching enquiries...',
+                    style: TextStyle(color: cs.onSurfaceVariant, fontSize: 14),
+                  ),
+                ],
               ),
-              elevation: 0,
-              color: cs.surfaceContainerLow,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () => context.push('/enquiry/${enquiry.id}'),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Column(
+            ),
+          )
+        else
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _enquiries.length + (_hasNextPage ? 1 : 0),
+            itemBuilder: (context, index) {
+              if (index == _enquiries.length) {
+                return _hasNextPage
+                    ? Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          children: [
+                            CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                cs.primary,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Loading more...',
+                              style: TextStyle(
+                                color: cs.onSurfaceVariant,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : const SizedBox.shrink();
+              }
+
+              final enquiry = _enquiries[index];
+              final fullName = '${enquiry.firstName} ${enquiry.lastName ?? ''}'
+                  .trim();
+              final status = enquiry.currentStatusName?.isNotEmpty == true
+                  ? enquiry.currentStatusName!
+                  : 'No Status';
+
+              final animated = index < _animateItems.length
+                  ? _animateItems[index]
+                  : true;
+
+              return AnimatedOpacity(
+                opacity: animated ? 1 : 0,
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeOut,
+                child: AnimatedSlide(
+                  offset: animated ? Offset.zero : const Offset(0, 0.12),
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeOut,
+                  child: Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(
+                        color: cs.outlineVariant.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    elevation: 0,
+                    color: cs.surfaceContainerLow,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => context.push('/enquiry/${enquiry.id}'),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  fullName,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        fullName,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.flag_outlined,
+                                            size: 14,
+                                            color: cs.onSurfaceVariant,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            status,
+                                            style: TextStyle(
+                                              color: cs.onSurfaceVariant,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                const SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.flag_outlined,
-                                      size: 14,
-                                      color: cs.onSurfaceVariant,
+                                IconButton.filledTonal(
+                                  icon: const Icon(Icons.call, size: 20),
+                                  onPressed: () =>
+                                      _makePhoneCall(enquiry.phoneNumber),
+                                  style: IconButton.styleFrom(
+                                    backgroundColor: Colors.green.withValues(
+                                      alpha: 0.15,
                                     ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      status,
-                                      style: TextStyle(
-                                        color: cs.onSurfaceVariant,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ],
+                                    foregroundColor: Colors.green,
+                                  ),
+                                ),
+                                IconButton.filledTonal(
+                                  icon: const Icon(Icons.history, size: 18),
+                                  onPressed: () {
+                                    context.push(
+                                      '/follow-ups/${enquiry.id}',
+                                      extra: fullName,
+                                    );
+                                  },
+                                  style: IconButton.styleFrom(
+                                    backgroundColor: cs.secondaryContainer
+                                        .withValues(alpha: 0.5),
+                                    foregroundColor: cs.onSecondaryContainer,
+                                  ),
                                 ),
                               ],
                             ),
-                          ),
-                          IconButton.filledTonal(
-                            icon: const Icon(Icons.call, size: 20),
-                            onPressed: () =>
-                                _makePhoneCall(enquiry.phoneNumber),
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.green.withValues(
-                                alpha: 0.15,
-                              ),
-                              foregroundColor: Colors.green,
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                if (enquiry.nextFollowUp != null)
+                                  _buildNextFollowUpBadge(
+                                    context,
+                                    enquiry.nextFollowUp!,
+                                    enquiry.currentStatusName ?? '',
+                                  ),
+                                const Spacer(),
+                                FilledButton.icon(
+                                  onPressed: () =>
+                                      _showAddFollowUpForm(context, enquiry),
+                                  icon: const Icon(
+                                    Icons.add_comment_outlined,
+                                    size: 18,
+                                  ),
+                                  label: const Text('Follow-up'),
+                                  style: FilledButton.styleFrom(
+                                    visualDensity: VisualDensity.compact,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                          IconButton.filledTonal(
-                            icon: const Icon(Icons.history, size: 18),
-                            onPressed: () {
-                              context.push(
-                                '/follow-ups/${enquiry.id}',
-                                extra: fullName,
-                              );
-                            },
-                            style: IconButton.styleFrom(
-                              backgroundColor: cs.secondaryContainer.withValues(
-                                alpha: 0.5,
-                              ),
-                              foregroundColor: cs.onSecondaryContainer,
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          if (enquiry.nextFollowUp != null)
-                            _buildNextFollowUpBadge(
-                              context,
-                              enquiry.nextFollowUp!,
-                            ),
-                          const Spacer(),
-                          FilledButton.icon(
-                            onPressed: () =>
-                                _showAddFollowUpForm(context, enquiry),
-                            icon: const Icon(
-                              Icons.add_comment_outlined,
-                              size: 18,
-                            ),
-                            label: const Text('Follow-up'),
-                            style: FilledButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
-        );
-      },
+      ],
     );
   }
 }

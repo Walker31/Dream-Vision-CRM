@@ -8,11 +8,10 @@ import 'package:logger/logger.dart';
 class AuthService {
   static const String _baseUrl = baseUrl;
   final _storage = const FlutterSecureStorage();
-  Logger logger = Logger();
+  final Logger logger = Logger();
   late Dio _dio;
 
   AuthService() {
-    logger.i('Initializing AuthService');
     _dio = Dio(
       BaseOptions(
         baseUrl: _baseUrl,
@@ -25,207 +24,163 @@ class AuthService {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          logger.i('Outgoing Request → ${options.method} ${options.uri}');
-          if (!options.path.contains('/login') &&
-              !options.path.contains('/register') &&
-              !options.path.contains('/token/refresh')) {
-            String? token = await getAccessToken();
+
+          // 🚫 Do NOT attach token to auth endpoints
+          if (!options.path.contains('/users/login') &&
+              !options.path.contains('/users/register') &&
+              !options.path.contains('/users/token/refresh')) {
+            final token = await getAccessToken();
             if (token != null) {
-              logger.i('Adding Authorization header');
               options.headers['Authorization'] = 'Bearer $token';
-            } else {
-              logger.w('No access token found');
             }
           }
-          return handler.next(options);
+
+          handler.next(options);
         },
+
         onError: (DioException e, handler) async {
-          logger.e('Request Error → ${e.requestOptions.path}');
+          final path = e.requestOptions.path;
+          logger.e('❌ ${e.response?.statusCode} → $path');
+
+          // 🚫 NEVER refresh during login/register
+          if (path.contains('/users/login') ||
+              path.contains('/users/register')) {
+            return handler.next(e);
+          }
+
           if (e.response?.statusCode == 401) {
-            if (e.requestOptions.path.contains('/token/refresh')) {
-              logger.e('Refresh token invalid. Logging out.');
-              await logout();
+            // 🚫 Refresh endpoint itself failed → hard logout
+            if (path.contains('/users/token/refresh')) {
+              await clearTokens();
               return handler.next(e);
             }
 
-            logger.w('Access token expired. Requesting refresh...');
-            try {
-              final newAccessToken = await refreshToken();
-              if (newAccessToken != null) {
-                logger.i('Retrying failed request with refreshed token');
-                final opts = e.requestOptions;
-                opts.headers['Authorization'] = 'Bearer $newAccessToken';
-                final response = await _dio.fetch(opts);
-                return handler.resolve(response);
-              }
-            } catch (refreshError) {
-              logger.e('Token refresh failed: $refreshError');
-              await logout();
-              return handler.next(e);
+            final newToken = await refreshToken();
+            if (newToken != null) {
+              final opts = e.requestOptions;
+              opts.headers['Authorization'] = 'Bearer $newToken';
+              return handler.resolve(await _dio.fetch(opts));
             }
+
+            // Refresh failed → logout
+            await clearTokens();
           }
-          return handler.next(e);
+
+          handler.next(e);
         },
       ),
     );
   }
 
-  String _handleDioError(
-    DioException e, [
-    String defaultError = 'An unknown error occurred.',
-  ]) {
-    logger.e('Handling Dio Error → ${e.message}');
-    if (e.type == DioExceptionType.connectionTimeout ||
-        e.type == DioExceptionType.sendTimeout ||
-        e.type == DioExceptionType.receiveTimeout) {
-      return 'Connection timed out. Please check your network.';
-    }
-    if (e.error is SocketException || e.type == DioExceptionType.unknown) {
-      return 'No internet connection. Please check your network.';
-    }
-
-    if (e.response != null) {
-      final int statusCode = e.response!.statusCode ?? 0;
-      final data = e.response!.data;
-      logger.e('Server Response Error ($statusCode) → $data');
-
-      if (statusCode >= 500) {
-        return 'Server error ($statusCode). Please try again later.';
-      }
-
-      if (data is String) {
-        if (data.toLowerCase().contains('<html')) {
-          return 'Server returned an invalid response.';
-        }
-        return data;
-      }
-
-      if (data is Map) {
-        if (data['detail'] != null) return data['detail'].toString();
-        if (data['message'] != null) return data['message'].toString();
-        if (data['error'] != null) return data['error'].toString();
-        if (data['non_field_errors'] != null) {
-          return (data['non_field_errors'] as List).join('\n');
-        }
-
-        if (data.isNotEmpty) {
-          final key = data.keys.first;
-          final value = data[key];
-          final formattedKey = key.toString().replaceAll('_', ' ').capitalize();
-          if (value is List) return "$formattedKey: ${value.first}";
-          return "$formattedKey: $value";
-        }
-      }
-    }
-
-    return defaultError;
-  }
-
-  
+  // ---------------------------------------------------------------------------
+  // TOKEN STORAGE
+  // ---------------------------------------------------------------------------
 
   Future<void> _storeTokens(Map<String, dynamic> tokens) async {
-    logger.i('Storing tokens');
     await _storage.write(key: 'access_token', value: tokens['access']);
     await _storage.write(key: 'refresh_token', value: tokens['refresh']);
   }
 
   Future<String?> getAccessToken() async {
-    logger.i('Fetching access token from storage');
     return await _storage.read(key: 'access_token');
   }
 
-  Future<void> logout() async {
-    logger.w('Logging out user. Clearing tokens.');
+  Future<void> clearTokens() async {
+    logger.w('🔒 Clearing tokens');
     await _storage.delete(key: 'access_token');
     await _storage.delete(key: 'refresh_token');
   }
 
+  // ---------------------------------------------------------------------------
+  // LOGIN
+  // ---------------------------------------------------------------------------
+
   Future<Map<String, dynamic>> login(String username, String password) async {
-    logger.i('Attempting login for user: $username');
     try {
       final response = await _dio.post(
         '/users/login/',
         data: {'username': username, 'password': password},
       );
 
-      if (response.data is! Map<String, dynamic>) {
-        final msg = "Invalid server response format.";
-        logger.e(msg);
-        GlobalErrorHandler.error(msg);
-      }
-
-      final responseBody = response.data;
-      logger.i('Login successful: $responseBody');
-
-      await _storeTokens(responseBody);
-      return responseBody;
-    } catch (e) {
-      final errorMessage = (e is DioException)
-          ? _handleDioError(e, 'Failed to login.')
-          : e.toString();
-      logger.e('Login error → $errorMessage');
-      GlobalErrorHandler.error(errorMessage);
-      return {};
-    }
-  }
-
-  Future<Map<String, dynamic>> getUserProfile() async {
-    logger.i('Fetching user profile');
-    try {
-      final response = await _dio.get('/users/profile/');
-      logger.i('Profile loaded → ${response.data}');
+      await _storeTokens(response.data);
       return response.data;
     } catch (e) {
-      final msg = (e is DioException)
-          ? _handleDioError(e, 'Failed to load user profile.')
+      final msg = e is DioException
+          ? _handleDioError(e, 'Login failed.')
           : e.toString();
-      logger.e('Profile fetch error → $msg');
       GlobalErrorHandler.error(msg);
       return {};
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // PROFILE
+  // ---------------------------------------------------------------------------
+
+  Future<Map<String, dynamic>> getUserProfile() async {
+    try {
+      final response = await _dio.get('/users/profile/');
+      return response.data;
+    } catch (e) {
+      final msg = e is DioException
+          ? _handleDioError(e, 'Failed to load profile.')
+          : e.toString();
+      GlobalErrorHandler.error(msg);
+      return {};
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // REFRESH TOKEN (SAFE)
+  // ---------------------------------------------------------------------------
+
   Future<String?> refreshToken() async {
     final refreshToken = await _storage.read(key: 'refresh_token');
-    logger.i('Attempting token refresh');
 
     if (refreshToken == null) {
-      logger.w('No refresh token found');
-      await logout();
-      GlobalErrorHandler.info('Session expired. Please login again.');
+      return null;
     }
 
     try {
-      final refreshDio = Dio(
-        BaseOptions(
-          baseUrl: _baseUrl,
-          headers: {'Content-Type': 'application/json'},
-        ),
-      );
-
-      final response = await refreshDio.post(
+      final dio = Dio(BaseOptions(baseUrl: _baseUrl));
+      final response = await dio.post(
         '/users/token/refresh/',
         data: {'refresh': refreshToken},
       );
 
-      if (response.statusCode == 200) {
-        logger.i('Token refreshed successfully');
-        final newTokens = response.data;
-        await _storage.write(key: 'access_token', value: newTokens['access']);
-        return newTokens['access'];
-      } else {
-        logger.e('Refresh token invalid');
-        await logout();
-        GlobalErrorHandler.info('Session expired. Please login again.');
-      }
-    } catch (e) {
-      logger.e('Refresh token error → $e');
-      await logout();
-      GlobalErrorHandler.error('Session expired. Please login again.');
+      final newAccess = response.data['access'];
+      await _storage.write(key: 'access_token', value: newAccess);
+      return newAccess;
+    } catch (_) {
       return null;
     }
-    return null;
   }
+
+  // ---------------------------------------------------------------------------
+  // ERROR HANDLER
+  // ---------------------------------------------------------------------------
+
+  String _handleDioError(
+    DioException e,
+    String fallback,
+  ) {
+    if (e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.receiveTimeout) {
+      return 'Network timeout.';
+    }
+
+    if (e.error is SocketException) {
+      return 'No internet connection.';
+    }
+
+    if (e.response?.data is Map &&
+        e.response!.data['detail'] != null) {
+      return e.response!.data['detail'];
+    }
+
+    return fallback;
+  }
+
 
   Future<void> signUp({
     required String username,

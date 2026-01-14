@@ -102,9 +102,7 @@ class _LoginPageState extends State<LoginPage> {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(30),
                     color: isDark
-                        ? cs.surface.withValues(
-                            alpha: 0.23,
-                          )
+                        ? cs.surface.withValues(alpha: 0.23)
                         : cs.surface,
                     border: Border.all(
                       color: cs.onSurface.withValues(alpha: 0.08),
@@ -117,7 +115,6 @@ class _LoginPageState extends State<LoginPage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Logo
                         Image.asset(
                           'assets/logo.jpg',
                           height: 100,
@@ -128,7 +125,6 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                         ),
                         const SizedBox(height: 12),
-
                         Text(
                           "Welcome to DV40 CRM",
                           style: theme.textTheme.headlineSmall?.copyWith(
@@ -197,39 +193,45 @@ class _LoginPageState extends State<LoginPage> {
                               textAlign: TextAlign.center,
                             ),
                           ),
-                      SizedBox(
-                        width: double.infinity,
-                        // Use FilledButton for a modern, solid M3 style
-                        child: FilledButton(
-                          onPressed: auth.isLoading ? null : _submitForm,
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16), // A bit more padding
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20), // Match text fields
+                        SizedBox(
+                          width: double.infinity,
+                          // Use FilledButton for a modern, solid M3 style
+                          child: FilledButton(
+                            onPressed: auth.isLoading ? null : _submitForm,
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 16,
+                              ), // A bit more padding
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  20,
+                                ), // Match text fields
+                              ),
                             ),
-                          ),
-                          child: auth.isLoading
-                              ? SizedBox( // Constrain the indicator size
-                                  height: 24,
-                                  width: 24,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 3, // Slightly thicker
-                                    valueColor: AlwaysStoppedAnimation(
-                                      // onPrimary is picked up automatically,
-                                      // but we can be explicit
-                                      Theme.of(context).colorScheme.onPrimary,
+                            child: auth.isLoading
+                                ? SizedBox(
+                                    // Constrain the indicator size
+                                    height: 24,
+                                    width: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 3, // Slightly thicker
+                                      valueColor: AlwaysStoppedAnimation(
+                                        // onPrimary is picked up automatically,
+                                        // but we can be explicit
+                                        Theme.of(context).colorScheme.onPrimary,
+                                      ),
+                                    ),
+                                  )
+                                : const Text(
+                                    "Sign In",
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                )
-                              : const Text(
-                                  "Sign In",
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+                          ),
                         ),
-                      ),],
+                      ],
                     ),
                   ),
                 ),

@@ -115,6 +115,7 @@ class EnquiryService {
     String? query,
     String? standard,
     String? status,
+    String? cnr,
   }) async {
     try {
       final response = await _dio.get(
@@ -124,6 +125,7 @@ class EnquiryService {
           if (query?.isNotEmpty == true) 'search': query,
           if (standard?.isNotEmpty == true) 'standard': standard,
           if (status?.isNotEmpty == true) 'status': status,
+          if (cnr?.isNotEmpty == true) 'cnr': cnr,
         },
       );
       return response.data ?? {};
@@ -158,8 +160,36 @@ class EnquiryService {
     status: status,
   );
 
-  Future<dynamic> getTelecallerEnquiries({int page = 1, String? status}) =>
-      _getPaginatedList('/enquiries/my_leads/', page: page, status: status);
+  Future<dynamic> getTelecallerEnquiries({
+    int page = 1,
+    String? status,
+    String? search,
+    String? cnr,
+  }) => _getPaginatedList(
+    '/enquiries/my_leads/',
+    page: page,
+    status: status,
+    query: search,
+    cnr: cnr,
+  );
+
+  Future<Map<String, dynamic>> getStatusCounts({
+    String? search,
+    String? status,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '/enquiries/status_counts/',
+        queryParameters: {
+          if (search?.isNotEmpty == true) 'search': search,
+          if (status?.isNotEmpty == true) 'status': status,
+        },
+      );
+      return response.data ?? {};
+    } catch (e) {
+      _rethrow(e);
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // ENQUIRIES

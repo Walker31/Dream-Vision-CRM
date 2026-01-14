@@ -2,7 +2,7 @@ import 'package:dreamvision/pages/Counsellor/counsellor_dashboard.dart';
 import 'package:dreamvision/pages/Telecaller/telecaller_dashboard.dart';
 import 'package:dreamvision/providers/auth_provider.dart';
 import 'package:flutter/material.dart';
-import 'package:logger/web.dart';
+import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
 class CRM extends StatefulWidget {
   const CRM({super.key});

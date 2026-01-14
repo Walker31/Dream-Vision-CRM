@@ -11,8 +11,13 @@ class ChartData {
 
 class EnquiryStatusChartCard extends StatelessWidget {
   final List<ChartData> chartDataSource;
+  final Map<String, int>? statusCounts;
 
-  const EnquiryStatusChartCard({super.key, required this.chartDataSource});
+  const EnquiryStatusChartCard({
+    super.key,
+    required this.chartDataSource,
+    this.statusCounts,
+  });
 
   double _safeValue(double v) {
     if (v.isNaN || v.isInfinite) return 0.0;
@@ -93,6 +98,7 @@ class EnquiryStatusChartCard extends StatelessWidget {
                   (data) => _buildLegendItem(
                     data.color,
                     '${data.status} (${_safeValue(data.value).toStringAsFixed(1)}%)',
+                    statusCounts?[data.status] ?? 0,
                   ),
                 )
                 .toList(),
@@ -102,7 +108,7 @@ class EnquiryStatusChartCard extends StatelessWidget {
     );
   }
 
-  Widget _buildLegendItem(Color color, String text) {
+  Widget _buildLegendItem(Color color, String text, int count) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
@@ -110,6 +116,22 @@ class EnquiryStatusChartCard extends StatelessWidget {
           Container(width: 16, height: 16, color: color),
           const SizedBox(width: 8),
           Flexible(child: Text(text)),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              count.toString(),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+          ),
         ],
       ),
     );

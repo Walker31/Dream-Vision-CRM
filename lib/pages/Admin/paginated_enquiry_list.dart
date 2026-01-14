@@ -175,7 +175,7 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
       case 'interested':
         base = Colors.blue;
         break;
-      case 'converted':
+      case 'confirmed':
         base = Colors.green;
         break;
       case 'follow-up':

@@ -121,6 +121,7 @@ class _SalesChartCardState extends State<SalesChartCard> {
       ),
     );
   }
+  
 
   Widget _buildSyncfusionChart() {
     final theme = Theme.of(context);

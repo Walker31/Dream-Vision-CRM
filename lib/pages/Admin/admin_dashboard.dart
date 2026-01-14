@@ -46,7 +46,7 @@ class _AdminDashboardState extends State<AdminDashboard>
   final List<String> _standardOptions = ['8th', '9th', '10th', '11th', '12th'];
   final List<String> _statusOptions = [
     'interested',
-    'converted',
+    'confirmed',
     'closed',
     'follow-up',
   ];
@@ -186,7 +186,7 @@ class _AdminDashboardState extends State<AdminDashboard>
 
     final map = {
       'interested': Colors.blue.shade600,
-      'converted': Colors.green.shade600,
+      'confirmed': Colors.green.shade600,
       'follow-up': Colors.orange.shade600,
       'closed': Colors.grey.shade600,
       'unknown': Colors.purple.shade400,

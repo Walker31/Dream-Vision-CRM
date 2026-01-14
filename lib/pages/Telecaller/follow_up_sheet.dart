@@ -109,11 +109,15 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet>
             .toLowerCase();
 
         final match = _statuses.firstWhere(
-          (s) => (s['name'] as String).toLowerCase() == name,
+          (s) {
+            if (s is! Map<String, dynamic>) return false;
+            final statusName = s['name'];
+            return statusName is String && statusName.toLowerCase() == name;
+          },
           orElse: () => null,
         );
 
-        if (match != null) {
+        if (match != null && match is Map<String, dynamic>) {
           _selectedStatusId = match['id'];
         }
       }

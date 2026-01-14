@@ -19,68 +19,53 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void _clearError() {
-    _errorMessage = '';
-  }
-
   // ---------------------------------------------------------------------------
   // LOGIN
   // ---------------------------------------------------------------------------
+
   Future<bool> login(String username, String password) async {
     _setLoading(true);
-    _clearError();
+    _errorMessage = '';
 
-    try {
-      final response = await _authService.login(username, password);
+    final response = await _authService.login(username, password);
 
-      if (response['user'] == null) {
-        throw Exception('Invalid login response');
-      }
-
-      _user = User.fromLoginJson(response['user']);
-      _setLoading(false);
-      return true;
-    } catch (e) {
-      _errorMessage = e.toString().replaceAll('Exception: ', '');
+    if (response['user'] == null) {
+      _errorMessage = 'Login failed';
       _user = null;
       _setLoading(false);
       return false;
     }
+
+    _user = User.fromLoginJson(response['user']);
+    _setLoading(false);
+    return true;
   }
 
   // ---------------------------------------------------------------------------
-  // AUTO LOGIN (CRITICAL FIX)
+  // AUTO LOGIN
   // ---------------------------------------------------------------------------
+
   Future<bool> tryAutoLogin() async {
-    try {
-      final token = await _authService.getAccessToken();
+    final token = await _authService.getAccessToken();
 
-      // ❌ No token → definitely not logged in
-      if (token == null || token.isEmpty) {
-        await logout();
-        return false;
-      }
+    if (token == null) return false;
 
-      // 🔄 Try fetching profile
-      final profileData = await _authService.getUserProfile();
-      _user = User.fromJson(profileData);
+    final profile = await _authService.getUserProfile();
+    if (profile.isEmpty) return false;
 
-      notifyListeners();
-      return true;
-    } catch (_) {
-      // ❌ ANY failure → force logout
-      await logout();
-      return false;
-    }
+    _user = User.fromJson(profile);
+    notifyListeners();
+    return true;
   }
 
   // ---------------------------------------------------------------------------
-  // LOGOUT (SINGLE SOURCE OF TRUTH)
+  // LOGOUT
   // ---------------------------------------------------------------------------
+
   Future<void> logout() async {
     _user = null;
     _errorMessage = '';
-    await _authService.logout();
+    await _authService.clearTokens();
     notifyListeners();
   }
 }

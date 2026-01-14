@@ -1,5 +1,6 @@
 import 'package:dreamvision/models/enquiry_model.dart';
 import 'package:dreamvision/services/enquiry_service.dart';
+import 'package:dreamvision/utils/error_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:logger/logger.dart';
@@ -20,6 +21,7 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
   late Future<void> _dashboardDataFuture;
   List<Enquiry> _recentEnquiries = [];
   List<ChartData> _chartDataSource = [];
+  Map<String, int> _statusCounts = {};
 
   @override
   void initState() {
@@ -29,30 +31,46 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
 
   Future<void> _fetchDashboardData() async {
     try {
-      final results = await Future.wait([
-        _enquiryService.getRecentEnquiries(),
-        _enquiryService.getEnquiryStatusSummary(),
-      ]);
+      final retryPolicy = RetryPolicy();
+      final results = await retryPolicy.execute(
+        () => Future.wait([
+          _enquiryService.getRecentEnquiries(),
+          _enquiryService.getEnquiryStatusSummary(),
+          _enquiryService.getStatusCounts(),
+        ]),
+      );
 
       final List<dynamic> recentEnquiryData = results[0] as List<dynamic>;
       final Map<String, dynamic> summaryData =
           results[1] as Map<String, dynamic>;
+      final Map<String, dynamic> statusCountData =
+          results[2] as Map<String, dynamic>;
       final List<dynamic> chartSummaryData = summaryData['chart_data'] ?? [];
+      final List<dynamic> statusCountsList =
+          statusCountData['status_counts'] ?? [];
 
       final parsedEnquiries = recentEnquiryData
           .map((data) => Enquiry.fromJson(data))
           .toList();
       final parsedChartData = _buildChartDataFromSummary(chartSummaryData);
+      
+      // Build status counts map
+      final Map<String, int> counts = {};
+      for (var item in statusCountsList) {
+        counts[item['status']] = item['count'] as int;
+      }
 
       if (mounted) {
         setState(() {
           _recentEnquiries = parsedEnquiries;
           _chartDataSource = parsedChartData;
+          _statusCounts = counts;
         });
       }
     } catch (e) {
       _logger.e("Failed to fetch dashboard data: $e");
-      throw Exception('Could not load dashboard data. Please try again.');
+      final userMessage = ErrorHelper.getUserMessage(e);
+      throw Exception(userMessage);
     }
   }
 
@@ -78,7 +96,7 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
     switch (status.toLowerCase()) {
       case 'interested':
         return Colors.blue.shade600;
-      case 'converted':
+      case 'confirmed':
         return Colors.green.shade600;
       case 'needs follow-up':
       case 'follow-up':
@@ -137,25 +155,30 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           } else if (snapshot.hasError) {
+            final cs = Theme.of(context).colorScheme;
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  Icon(Icons.error_outline, size: 48, color: cs.error),
+                  const SizedBox(height: 16),
                   Padding(
-                    padding: const EdgeInsets.all(16.0),
+                    padding: const EdgeInsets.symmetric(horizontal: 32.0),
                     child: Text(
                       '${snapshot.error}',
                       textAlign: TextAlign.center,
+                      style: TextStyle(color: cs.onSurface, fontSize: 16),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
+                  const SizedBox(height: 24),
+                  FilledButton.icon(
                     onPressed: () {
                       setState(() {
                         _dashboardDataFuture = _fetchDashboardData();
                       });
                     },
-                    child: const Text('Retry'),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Try Again'),
                   ),
                 ],
               ),
@@ -169,7 +192,10 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    EnquiryStatusChartCard(chartDataSource: _chartDataSource),
+                    EnquiryStatusChartCard(
+                      chartDataSource: _chartDataSource,
+                      statusCounts: _statusCounts,
+                    ),
                     const SizedBox(height: 24),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -200,7 +226,12 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
         backgroundColor: theme.colorScheme.secondaryContainer,
         foregroundColor: theme.colorScheme.onSecondaryContainer,
         shape: const CircleBorder(),
-        onPressed: () => context.push('/add-enquiry'),
+        onPressed: () async {
+          final result = await context.push('/add-enquiry');
+          if (result == true && mounted) {
+            _dashboardDataFuture = _fetchDashboardData();
+          }
+        },
         child: const Icon(Icons.add),
       ),
     );
