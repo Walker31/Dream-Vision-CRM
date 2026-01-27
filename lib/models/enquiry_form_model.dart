@@ -21,7 +21,7 @@ class EnquiryFormModel {
 
   String? enquiringForStandard;
   String? enquiringForBoard;
-  final Set<String> selectedExams = {};
+  final Set<int> selectedExamIds = {};
 
   int? selectedSchoolId;
   final otherSchoolController = TextEditingController();
@@ -76,12 +76,12 @@ class EnquiryFormModel {
       otherSchoolController.text = enquiry.schoolName!;
     }
 
-    // Exams
-    if (enquiry.enquiringForExam != null) {
-      selectedExams.addAll(
-        enquiry.enquiringForExam!
-            .split(RegExp(r'[,\s]+'))
-            .where((e) => e.isNotEmpty),
+    // Exams - extract IDs from the exams list returned by API
+    if (enquiry.exams.isNotEmpty) {
+      selectedExamIds.addAll(
+        enquiry.exams
+            .map((exam) => exam['id'] as int)
+            .where((id) => id > 0),
       );
     }
 
@@ -135,7 +135,7 @@ class EnquiryFormModel {
       // Referral + Course
       'referred_by': referredBy.toList(),
       'enquiring_for_standard': enquiringForStandard,
-      'enquiring_for_exam': selectedExams.join(', '),
+      'exam_ids': selectedExamIds.toList(),
       'enquiring_for_board': enquiringForBoard,
 
       // Parent details
@@ -157,7 +157,7 @@ class EnquiryFormModel {
       'current_status': currentStatusId,
 
       // Academic Forms
-      'academic_performance': academicForms.map<Map<String, dynamic>>((form) {
+      'academic_performances': academicForms.map<Map<String, dynamic>>((form) {
         return {
           'standard_level':
               (form['standard_level'] as TextEditingController).text,

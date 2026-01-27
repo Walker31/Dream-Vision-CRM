@@ -45,6 +45,8 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
   List<Map<String, dynamic>> _sources = [];
   List<Map<String, dynamic>> _statuses = [];
   List<Map<String, dynamic>> _schools = [];
+  List<Map<String, dynamic>> _exams = [];
+  final GlobalKey<FormFieldState<DateTime>> _dobFieldKey = GlobalKey<FormFieldState<DateTime>>();
   final List<String> _occupations = [
     'Defence',
     'Doctor',
@@ -116,12 +118,14 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
         _enquiryService.getEnquirySources(),
         _enquiryService.getEnquiryStatuses(),
         _enquiryService.getSchools(),
+        _enquiryService.getExams(),
       ]);
       if (mounted) {
         setState(() {
           _sources = List<Map<String, dynamic>>.from(results[0]);
           _statuses = List<Map<String, dynamic>>.from(results[1]);
           _schools = List<Map<String, dynamic>>.from(results[2]);
+          _exams = List<Map<String, dynamic>>.from(results[3]);
           _isLoading = false;
         });
       }
@@ -188,6 +192,11 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
       // Get the data map from our model
       final enquiryData = _formModel.toApiMap();
 
+      // Log the form data
+      _logger.i('Submitting enquiry form with data:');
+      _logger.i('Mode: ${_isEditMode ? 'EDIT' : 'CREATE'}');
+      _logger.i(enquiryData);
+
       if (_isEditMode) {
         await _enquiryService.updateEnquiry(widget.enquiry!.id, enquiryData);
       } else {
@@ -245,6 +254,8 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
       setState(() {
         _formModel.selectedDob = picked;
       });
+      // Update FormField state to reflect the new date
+      _dobFieldKey.currentState?.didChange(picked);
     }
   }
 
@@ -328,10 +339,16 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
               isRequired: false,
             ),
             CustomDateField(
+              key: _dobFieldKey,
               label: 'Date of Birth',
-              date: _formModel.selectedDob,
+              initialValue: _formModel.selectedDob,
               onTap: () => _pickDate(context),
               isRequired: true,
+              onSaved: (value) {
+                if (value != null) {
+                  _formModel.selectedDob = value;
+                }
+              },
             ),
             CustomTextField(
               _formModel.phoneController,
@@ -417,24 +434,18 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
             ),
             CustomFilterChipGroup(
               title: 'Exam',
-              options: const [
-                'JEE (M+A)',
-                'NEET (UG)',
-                'MHT-CET + JEE (M)',
-                'MHT-CET + NEET (UG)',
-                'MHT-CET',
-                'Regular',
-                'Foundation',
-                'Regular + Foundation',
-                'Other',
-              ],
-              selectedValues: _formModel.selectedExams,
-              onChanged: (option, isSelected) {
+              options: _exams.map((e) => e['name'] as String).toList(),
+              selectedValues: _exams
+                  .where((e) => _formModel.selectedExamIds.contains(e['id']))
+                  .map((e) => e['name'] as String)
+                  .toSet(),
+              onChanged: (examName, isSelected) {
                 setState(() {
+                  final exam = _exams.firstWhere((e) => e['name'] == examName);
                   if (isSelected) {
-                    _formModel.selectedExams.add(option);
+                    _formModel.selectedExamIds.add(exam['id'] as int);
                   } else {
-                    _formModel.selectedExams.remove(option);
+                    _formModel.selectedExamIds.remove(exam['id'] as int);
                   }
                 });
               },

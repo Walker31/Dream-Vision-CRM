@@ -38,7 +38,8 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet>
   String? _standard;
   String? _board;
   bool? _admissionConfirmed;
-  final Set<String> _selectedExams = {};
+  final Set<int> _selectedExamIds = {};
+  List<Map<String, dynamic>> _exams = [];
 
   final TextEditingController _remarksController = TextEditingController();
 
@@ -68,6 +69,7 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet>
 
     _loadInitialValues();
     _loadStatuses();
+    _loadExams();
   }
 
   void _loadInitialValues() {
@@ -95,7 +97,11 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet>
     _admissionConfirmed = acad['admission_confirmed'];
 
     if (acad['exams'] is List) {
-      _selectedExams.addAll(List<String>.from(acad['exams']));
+      _selectedExamIds.addAll(
+        (acad['exams'] as List)
+            .map((e) => (e is int) ? e : int.tryParse(e.toString()) ?? 0)
+            .where((id) => id > 0),
+      );
     }
   }
 
@@ -131,6 +137,19 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet>
     }
   }
 
+  Future<void> _loadExams() async {
+    try {
+      final exams = await _service.getExams();
+      if (mounted) {
+        setState(() {
+          _exams = List<Map<String, dynamic>>.from(exams);
+        });
+      }
+    } catch (e) {
+      logger.e("Exams load error: $e");
+    }
+  }
+
   Future<void> _pickDateTime() async {
     final d = await showDatePicker(
       context: context,
@@ -159,7 +178,7 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet>
   void _clearAcademic() {
     _standard = null;
     _board = null;
-    _selectedExams.clear();
+    _selectedExamIds.clear();
     _admissionConfirmed = null;
   }
 
@@ -196,7 +215,7 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet>
         "academic_details_discussed": {
           "standard": _standard,
           "board": _board,
-          "exams": _selectedExams.toList(),
+          "exams": _selectedExamIds.toList(),
           "admission_confirmed": _admissionConfirmed,
         },
       };
@@ -323,23 +342,18 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet>
         const SizedBox(height: 12),
         CustomFilterChipGroup(
           title: "Exam",
-          options: const [
-            'JEE (M+A)',
-            'NEET (UG)',
-            'MHT-CET + JEE (M)',
-            'MHT-CET + NEET (UG)',
-            'MHT-CET',
-            'Regular',
-            'Foundation',
-            'Regular + Foundation',
-          ],
-          selectedValues: _selectedExams,
-          onChanged: (exam, selected) {
+          options: _exams.map((e) => e['name'] as String).toList(),
+          selectedValues: _exams
+              .where((e) => _selectedExamIds.contains(e['id']))
+              .map((e) => e['name'] as String)
+              .toSet(),
+          onChanged: (examName, selected) {
             setState(() {
+              final exam = _exams.firstWhere((e) => e['name'] == examName);
               if (selected) {
-                _selectedExams.add(exam);
+                _selectedExamIds.add(exam['id'] as int);
               } else {
-                _selectedExams.remove(exam);
+                _selectedExamIds.remove(exam['id'] as int);
               }
             });
           },

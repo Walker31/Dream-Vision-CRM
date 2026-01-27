@@ -205,22 +205,19 @@ class EnquiryService {
   }
 
   Future<void> _ensureStoragePermission() async {
+    // On Android 10+ (API 29+), prefer SAF-based flows (no broad storage).
     if (!Platform.isAndroid) return;
 
     final androidInfo = await DeviceInfoPlugin().androidInfo;
     final sdkInt = androidInfo.version.sdkInt;
 
-    if (sdkInt >= 30) {
-      final status = await Permission.manageExternalStorage.request();
-      if (!status.isGranted) {
-        throw Exception('Storage permission denied');
-      }
-    } else {
+    if (sdkInt <= 28) {
       final status = await Permission.storage.request();
       if (!status.isGranted) {
         throw Exception('Storage permission denied');
       }
     }
+    // For API 29+, SAF/file picker handles per-file access without extra permission.
   }
 
   Future<String> downloadEnquiryTemplate() async {
@@ -238,22 +235,9 @@ class EnquiryService {
 
       final bytes = Uint8List.fromList(List<int>.from(response.data));
 
-      Directory directory;
-
-      if (Platform.isAndroid) {
-        final downloads = Directory('/storage/emulated/0/Download');
-        if (await downloads.exists()) {
-          directory = downloads;
-        } else {
-          directory = await getApplicationDocumentsDirectory();
-        }
-      } else if (Platform.isIOS) {
-        directory = await getApplicationDocumentsDirectory();
-      } else {
-        directory =
-            await getDownloadsDirectory() ?? await getTemporaryDirectory();
-      }
-
+      // Save to app's documents directory (no broad storage access needed).
+      // On Android 11+, this uses scoped storage automatically.
+      final directory = await getApplicationDocumentsDirectory();
       final filePath = '${directory.path}/Sample Template.xlsx';
       final file = File(filePath);
       await file.writeAsBytes(bytes, flush: true);
@@ -288,6 +272,7 @@ class EnquiryService {
   Future<Map<String, dynamic>> createEnquiry(Map<String, dynamic> data) async {
     try {
       final response = await _dio.post('/enquiries/', data: data);
+      logger.i('Created Enquiry: ${response.data}');
       return response.data ?? {};
     } catch (e) {
       _rethrow(e);
@@ -411,6 +396,15 @@ class EnquiryService {
   Future<List<dynamic>> getEnquirySources() async {
     try {
       final response = await _dio.get('/sources/');
+      return response.data ?? [];
+    } catch (e) {
+      _rethrow(e);
+    }
+  }
+
+  Future<List<dynamic>> getExams() async {
+    try {
+      final response = await _dio.get('/exams/');
       return response.data ?? [];
     } catch (e) {
       _rethrow(e);

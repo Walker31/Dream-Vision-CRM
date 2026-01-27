@@ -96,54 +96,50 @@ class CustomTextField extends StatelessWidget {
   }
 }
 
-class CustomDateField extends StatelessWidget {
-  final String label;
-  final DateTime? date;
-  final VoidCallback onTap;
-  final bool isRequired;
-
-  const CustomDateField({
+class CustomDateField extends FormField<DateTime> {
+  CustomDateField({
     super.key,
-    required this.label,
-    required this.date,
-    required this.onTap,
-    this.isRequired = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final bool showError = isRequired && date == null;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: GestureDetector(
-        onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            InputDecorator(
-              decoration: InputDecoration(
-                label: _buildLabel(label, isRequired), // Used label instead of labelText
-                filled: true,
-                fillColor: Colors.grey.withAlpha(26),
-                suffixIcon: const Icon(Icons.calendar_today),
-                errorText: showError ? 'Please select $label' : null,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              child: Text(
-                date != null
-                    ? DateFormat.yMd().format(date!)
-                    : 'Select a date',
+    required String label,
+    super.initialValue,
+    required VoidCallback onTap,
+    bool isRequired = false,
+    super.onSaved,
+  }) : super(
+    validator: isRequired
+        ? (value) => value == null ? 'Please select $label' : null
+        : null,
+    builder: (FormFieldState<DateTime> state) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8.0),
+        child: GestureDetector(
+          onTap: onTap,
+          child: InputDecorator(
+            decoration: InputDecoration(
+              labelText: label,
+              filled: true,
+              fillColor: Colors.grey.withAlpha(26),
+              suffixIcon: const Icon(Icons.calendar_today),
+              errorText: state.errorText,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide.none,
               ),
             ),
-          ],
+            child: Text(
+              state.value != null
+                  ? DateFormat.yMd().format(state.value!)
+                  : 'Select a date',
+              style: TextStyle(
+                color: state.value != null
+                    ? null
+                    : Colors.grey,
+              ),
+            ),
+          ),
         ),
-      ),
-    );
-  }
+      );
+    },
+  );
 }
 
 class CustomDropdownField extends StatelessWidget {

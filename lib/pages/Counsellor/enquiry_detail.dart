@@ -335,7 +335,11 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
               details: {
                 'Standard': enquiry.enquiringForStandard,
                 'Board': enquiry.enquiringForBoard,
-                'Competitive Exam': enquiry.enquiringForExam,
+                'Competitive Exams': enquiry.exams.isNotEmpty
+                    ? enquiry.exams
+                        .map((e) => e['name'] as String? ?? 'Unknown')
+                        .join(', ')
+                    : 'None',
               },
             ),
             const SizedBox(height: 16),

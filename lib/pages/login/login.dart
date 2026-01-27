@@ -116,7 +116,7 @@ class _LoginPageState extends State<LoginPage> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Image.asset(
-                          'assets/logo.jpg',
+                          'assets/logo.jpeg',
                           height: 100,
                           errorBuilder: (_, __, ___) => Icon(
                             Icons.school_rounded,

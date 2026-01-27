@@ -4,6 +4,7 @@ class Enquiry {
   final List<dynamic> interactions;
   final List<dynamic> followUps;
   final List<dynamic>? academicPerformance;
+  final List<Map<String, dynamic>> exams;
 
   final Map<String, dynamic>? assignedToCounsellorDetails;
   final Map<String, dynamic>? assignedToTelecallerDetails;
@@ -43,6 +44,7 @@ class Enquiry {
     required this.interactions,
     required this.followUps,
     this.academicPerformance,
+    this.exams = const [],
     required this.assignedToCounsellorDetails,
     required this.assignedToTelecallerDetails,
     this.createdByDetails,
@@ -81,6 +83,7 @@ class Enquiry {
       interactions: json['interactions'] ?? [],
       followUps: json['follow_ups'] ?? [],
       academicPerformance: json['academic_performance'],
+      exams: (json['exams'] as List?)?.cast<Map<String, dynamic>>() ?? [],
 
       assignedToCounsellorDetails: json['assigned_to_counsellor_details'],
       assignedToTelecallerDetails: json['assigned_to_telecaller_details'],
@@ -133,6 +136,7 @@ class Enquiry {
       'interactions': interactions,
       'follow_ups': followUps,
       'academic_performance': academicPerformance,
+      'exams': exams,
 
       'assigned_to_counsellor_details': assignedToCounsellorDetails,
       'assigned_to_telecaller_details': assignedToTelecallerDetails,
