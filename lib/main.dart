@@ -6,6 +6,7 @@ import 'package:dreamvision/pages/Counsellor/add_enquiry_page.dart';
 import 'package:dreamvision/pages/Counsellor/counsellor_dashboard.dart';
 import 'package:dreamvision/pages/Counsellor/enquiry_detail.dart';
 import 'package:dreamvision/pages/Counsellor/all_enquiries.dart';
+import 'package:dreamvision/pages/Manager/manager_dashboard.dart';
 import 'package:dreamvision/pages/Telecaller/telecaller_dashboard.dart';
 import 'package:dreamvision/pages/Admin/profile/profile_details.dart';
 import 'package:dreamvision/pages/Admin/users.dart';
@@ -22,6 +23,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models/enquiry_model.dart';
 import 'models/user_model.dart';
@@ -37,6 +39,11 @@ void main() {
       await SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
       ]);
+
+      // Clear search preferences on app startup
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('enquiry_search_unassigned');
+      await prefs.remove('enquiry_search_assigned');
 
       FlutterError.onError = (FlutterErrorDetails details) {
         FlutterError.presentError(details);
@@ -104,6 +111,10 @@ final GoRouter _router = GoRouter(
     GoRoute(
       path: '/counsellor',
       builder: (context, state) => const CounsellorDashboard(),
+    ),
+    GoRoute(
+      path: '/manager',
+      builder: (context, state) => const ManagerDashboard(),
     ),
 
     GoRoute(

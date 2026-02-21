@@ -2,9 +2,11 @@ import 'dart:async';
 import 'package:dreamvision/models/enquiry_model.dart';
 import 'package:dreamvision/services/enquiry_service.dart';
 import 'package:dreamvision/utils/global_error_handler.dart';
+import 'package:dreamvision/utils/status_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:logger/logger.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 enum EnquiryListType { unassigned, assigned }
 
@@ -12,6 +14,7 @@ class PaginatedEnquiryList extends StatefulWidget {
   final EnquiryListType type;
   final String? initialStandard;
   final String? initialStatus;
+  final int? initialTelecallerId;
   final VoidCallback? onChanged;
 
   const PaginatedEnquiryList({
@@ -19,6 +22,7 @@ class PaginatedEnquiryList extends StatefulWidget {
     required this.type,
     this.initialStandard,
     this.initialStatus,
+    this.initialTelecallerId,
     this.onChanged,
   });
 
@@ -26,10 +30,13 @@ class PaginatedEnquiryList extends StatefulWidget {
   State<PaginatedEnquiryList> createState() => PaginatedEnquiryListState();
 }
 
-class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
+class PaginatedEnquiryListState extends State<PaginatedEnquiryList>
+    with AutomaticKeepAliveClientMixin {
   final EnquiryService _enquiryService = EnquiryService();
   final Logger _logger = Logger();
   final ScrollController _scrollController = ScrollController();
+  late final TextEditingController _searchController;
+  late SharedPreferences _prefs;
 
   List<Enquiry> _enquiries = [];
   int _currentPage = 1;
@@ -41,25 +48,104 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
 
   String? _standardFilter;
   String? _statusFilter;
+  int? _telecallerIdFilter;
+
+  String get _searchStorageKey => 'enquiry_search_${widget.type.name}';
+  String get _scrollPositionStorageKey => 'enquiry_scroll_${widget.type.name}';
+
+  @override
+  bool get wantKeepAlive => true;
+
+  Future<void> _saveSearchToStorage(String? query) async {
+    if (query == null || query.isEmpty) {
+      await _prefs.remove(_searchStorageKey);
+    } else {
+      await _prefs.setString(_searchStorageKey, query);
+    }
+  }
+
+  Future<void> _saveScrollPosition() async {
+    if (_scrollController.hasClients) {
+      await _prefs.setDouble(
+        _scrollPositionStorageKey,
+        _scrollController.offset,
+      );
+    }
+  }
+
+  Future<void> _restoreScrollPosition() async {
+    final savedPosition = _prefs.getDouble(_scrollPositionStorageKey);
+    if (savedPosition != null && _scrollController.hasClients) {
+      _scrollController.jumpTo(savedPosition);
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    _searchController = TextEditingController();
     _standardFilter = widget.initialStandard;
     _statusFilter = widget.initialStatus;
-    _fetchPage(1);
+    _telecallerIdFilter = widget.initialTelecallerId;
+    _initializeAndLoad();
     _scrollController.addListener(_onScroll);
+  }
+
+  Future<void> _initializeAndLoad() async {
+    _prefs = await SharedPreferences.getInstance();
+
+    // Restore search from storage if available
+    final savedSearch = _prefs.getString(_searchStorageKey);
+    if (mounted && savedSearch != null && savedSearch.isNotEmpty) {
+      _searchController.text = savedSearch;
+      _searchQuery = savedSearch;
+    }
+
+    // Only fetch if we don't have data yet
+    if (_enquiries.isEmpty) {
+      await _fetchPage(1);
+    }
+
+    // Restore scroll position after data is loaded
+    if (mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _restoreScrollPosition();
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(PaginatedEnquiryList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Only refresh if the initial filters changed, not just parent rebuild
+    // If search is active, don't reset it on parent rebuild
+    if (oldWidget.initialStandard != widget.initialStandard ||
+        oldWidget.initialStatus != widget.initialStatus ||
+        oldWidget.initialTelecallerId != widget.initialTelecallerId) {
+      _standardFilter = widget.initialStandard;
+      _statusFilter = widget.initialStatus;
+      _telecallerIdFilter = widget.initialTelecallerId;
+      _searchQuery = null;
+      _searchController.clear();
+      _fetchPage(1);
+    }
+    // If filters stay the same and search is active, preserve the current list state
   }
 
   @override
   void dispose() {
     _scrollController.removeListener(_onScroll);
+    _saveScrollPosition(); // Save position before disposing
     _scrollController.dispose();
     _debounce?.cancel();
+    _searchController.dispose();
     super.dispose();
   }
 
   void _onScroll() {
+    // Save scroll position periodically
+    _saveScrollPosition();
+
     if (_scrollController.position.pixels <
         _scrollController.position.maxScrollExtent * 0.9) {
       return;
@@ -86,6 +172,7 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
           query: _searchQuery,
           standard: _standardFilter,
           status: _statusFilter,
+          telecallerId: _telecallerIdFilter,
         );
       } else {
         response = await _enquiryService.getAssignedEnquiries(
@@ -93,6 +180,7 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
           query: _searchQuery,
           standard: _standardFilter,
           status: _statusFilter,
+          telecallerId: _telecallerIdFilter,
         );
       }
 
@@ -144,21 +232,29 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
 
   Future<void> refresh() async {
     _searchQuery = null;
+    _searchController.clear();
+    await _saveSearchToStorage(null); // Clear from storage
     await _fetchPage(1);
   }
 
-  void refreshWithFilters(String? standard, String? status) {
+  void refreshWithFilters(String? standard, String? status, int? telecallerId) {
     _standardFilter = standard;
     _statusFilter = status;
+    _telecallerIdFilter = telecallerId;
     _searchQuery = null;
+    _searchController.clear();
+    _saveSearchToStorage(null); // Clear from storage when filters change
     _fetchPage(1);
   }
 
   void _onSearchChanged(String query) {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 500), () {
-      if (_searchQuery != query) {
-        _searchQuery = query;
+      // Only fetch if the query actually changed
+      final newQuery = query.isEmpty ? null : query;
+      if (_searchQuery != newQuery) {
+        _searchQuery = newQuery;
+        _saveSearchToStorage(newQuery); // Save to storage
         _fetchPage(1);
       }
     });
@@ -168,109 +264,89 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
     BuildContext context,
     String status,
   ) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    Color base;
-
-    switch (status.toLowerCase()) {
-      case 'interested':
-        base = Colors.blue;
-        break;
-      case 'confirmed':
-        base = Colors.green;
-        break;
-      case 'follow-up':
-      case 'needs follow-up':
-        base = Colors.orange;
-        break;
-      case 'closed':
-        base = Colors.grey;
-        break;
-      default:
-        base = Colors.purple;
-    }
-
-    if (isDark) {
-      return (
-        bg: base.withValues(alpha: 0.2),
-        text: base.withValues(alpha: 0.9),
-      );
-    } else {
-      return (bg: base.withValues(alpha: 0.85), text: Colors.white);
-    }
+    return StatusColors.getThemedColors(context, status);
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
     final cs = Theme.of(context).colorScheme;
 
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-          child: TextField(
-            onChanged: _onSearchChanged,
-            decoration: InputDecoration(
-              hintText: 'Search in ${widget.type.name}...',
-              prefixIcon: Icon(Icons.search, color: cs.onSurfaceVariant),
-              filled: true,
-              fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.3),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: cs.outline.withValues(alpha: 0.2),
+    return SingleChildScrollView(
+      controller: _scrollController,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: TextField(
+              controller: _searchController,
+              onChanged: _onSearchChanged,
+              decoration: InputDecoration(
+                hintText: 'Search in ${widget.type.name}...',
+                prefixIcon: Icon(Icons.search, color: cs.onSurfaceVariant),
+                filled: true,
+                fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.3),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
                 ),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: cs.primary, width: 1.5),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: cs.outline.withValues(alpha: 0.2),
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: cs.primary, width: 1.5),
+                ),
               ),
             ),
           ),
-        ),
 
-        // INITIAL LOADING VIEW
-        if (_isFirstLoad && _isLoading)
-          const Expanded(child: Center(child: CircularProgressIndicator()))
-        // EMPTY VIEW
-        else if (_enquiries.isEmpty && !_isLoading)
-          Expanded(
-            child: Center(
-              child: SingleChildScrollView(
-                physics: const NeverScrollableScrollPhysics(),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.search_off_outlined,
-                      size: 48,
-                      color: cs.outline,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      _searchQuery != null && _searchQuery!.isNotEmpty
-                          ? 'No enquiries found for "$_searchQuery".'
-                          : 'No ${widget.type.name} enquiries found.',
-                      style: TextStyle(
-                        color: cs.onSurfaceVariant,
-                        fontSize: 16,
+          // INITIAL LOADING VIEW
+          if (_isFirstLoad && _isLoading)
+            const SizedBox(
+              height: 200,
+              child: Center(child: CircularProgressIndicator()),
+            )
+          // EMPTY VIEW
+          else if (_enquiries.isEmpty && !_isLoading)
+            SizedBox(
+              height: 200,
+              child: Center(
+                child: SingleChildScrollView(
+                  physics: const NeverScrollableScrollPhysics(),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.search_off_outlined,
+                        size: 48,
+                        color: cs.outline,
                       ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
+                      const SizedBox(height: 16),
+                      Text(
+                        _searchQuery != null && _searchQuery!.isNotEmpty
+                            ? 'No enquiries found for "$_searchQuery".'
+                            : 'No ${widget.type.name} enquiries found.',
+                        style: TextStyle(
+                          color: cs.onSurfaceVariant,
+                          fontSize: 16,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          )
-        // LIST VIEW
-        else
-          Expanded(
-            child: ListView.separated(
-              controller: _scrollController,
+            )
+          // LIST VIEW
+          else
+            ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
               itemCount: _enquiries.length + (_hasNextPage ? 1 : 0),
               separatorBuilder: (_, __) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
@@ -280,7 +356,6 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
                     child: Center(child: CircularProgressIndicator()),
                   );
                 }
-
                 final enquiry = _enquiries[index];
                 final fullName =
                     "${enquiry.firstName} ${enquiry.lastName ?? ''}".trim();
@@ -301,7 +376,6 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
                     onTap: () async {
                       await context.push("/enquiry/${enquiry.id}");
                       if (mounted) {
-                        _fetchPage(1);
                         widget.onChanged?.call();
                       }
                     },
@@ -325,6 +399,7 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
+                              const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 8,
@@ -334,12 +409,18 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
                                   color: statusColors.bg,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
-                                child: Text(
-                                  status,
-                                  style: TextStyle(
-                                    color: statusColors.text,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 80,
+                                  ),
+                                  child: Text(
+                                    status,
+                                    style: TextStyle(
+                                      color: statusColors.text,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                               ),
@@ -361,10 +442,7 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
                               // Phone text must be inside Expanded
                               Expanded(
                                 child: Text(
-                                  enquiry.phoneNumber.trim().isNotEmpty
-                                      ? enquiry.phoneNumber
-                                      : (enquiry.fatherPhoneNumber ??
-                                            "No number"),
+                                  _getDisplayPhoneNumber(enquiry),
                                   style: TextStyle(
                                     color: cs.onSurfaceVariant,
                                     fontSize: 13,
@@ -406,8 +484,24 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList> {
                 );
               },
             ),
-          ),
-      ],
+        ],
+      ),
     );
+  }
+
+  /// Get the phone number to display - prefers student phone, falls back to father's phone
+  String _getDisplayPhoneNumber(Enquiry enquiry) {
+    // First, try father's phone number
+    if (enquiry.fatherPhoneNumber?.trim().isNotEmpty ?? false) {
+      return enquiry.fatherPhoneNumber!.trim();
+    }
+
+    // Fall back to student's phone number
+    if (enquiry.phoneNumber?.trim().isNotEmpty ?? false) {
+      return enquiry.phoneNumber!.trim();
+    }
+
+    // No phone number available
+    return "No number";
   }
 }

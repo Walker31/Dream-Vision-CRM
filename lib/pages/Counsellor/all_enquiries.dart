@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:dreamvision/services/enquiry_service.dart';
+import 'package:dreamvision/utils/status_colors.dart';
 import 'package:dreamvision/widgets/back_button.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/enquiry_model.dart';
 
@@ -17,6 +19,7 @@ class _AllEnquiriesPageState extends State<AllEnquiriesPage> {
   final EnquiryService _enquiryService = EnquiryService();
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
+  late SharedPreferences _prefs;
 
   final List<Enquiry> _enquiries = [];
   int _currentPage = 1;
@@ -27,16 +30,61 @@ class _AllEnquiriesPageState extends State<AllEnquiriesPage> {
   String _searchQuery = '';
   Timer? _debounce;
 
+  static const String _searchStorageKey = 'all_enquiries_search';
+  static const String _scrollPositionStorageKey = 'all_enquiries_scroll_position';
+
   @override
   void initState() {
     super.initState();
-    _fetchEnquiries(page: 1); // Pass page 1
+    _initializeAndLoad();
     _scrollController.addListener(_onScroll);
     _searchController.addListener(_onSearchChanged);
   }
 
+  Future<void> _initializeAndLoad() async {
+    _prefs = await SharedPreferences.getInstance();
+    
+    // Restore search from storage
+    final savedSearch = _prefs.getString(_searchStorageKey) ?? '';
+    if (mounted && savedSearch.isNotEmpty) {
+      _searchController.text = savedSearch;
+      _searchQuery = savedSearch;
+    }
+    
+    await _fetchEnquiries(page: 1);
+    
+    // Restore scroll position after data loads
+    if (mounted) {
+      await _restoreScrollPosition();
+    }
+  }
+
+  Future<void> _saveSearchToStorage(String query) async {
+    if (query.isEmpty) {
+      await _prefs.remove(_searchStorageKey);
+    } else {
+      await _prefs.setString(_searchStorageKey, query);
+    }
+  }
+
+  Future<void> _saveScrollPosition() async {
+    final position = _scrollController.hasClients 
+        ? _scrollController.offset 
+        : 0.0;
+    await _prefs.setDouble(_scrollPositionStorageKey, position);
+  }
+
+  Future<void> _restoreScrollPosition() async {
+    final savedPosition = _prefs.getDouble(_scrollPositionStorageKey) ?? 0.0;
+    if (_scrollController.hasClients && savedPosition > 0) {
+      await Future.delayed(const Duration(milliseconds: 50));
+      _scrollController.jumpTo(savedPosition);
+    }
+  }
+
   @override
   void dispose() {
+    _saveScrollPosition();
     _scrollController.removeListener(_onScroll);
     _searchController.removeListener(_onSearchChanged);
     _scrollController.dispose();
@@ -61,6 +109,7 @@ class _AllEnquiriesPageState extends State<AllEnquiriesPage> {
         setState(() {
           _searchQuery = _searchController.text;
         });
+        _saveSearchToStorage(_searchController.text);
         _refresh();
       }
     });
@@ -222,19 +271,7 @@ class _EnquiryListItem extends StatelessWidget {
   });
 
   Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'interested':
-        return Colors.blue.shade600;
-      case 'confirmed':
-        return Colors.green.shade600;
-      case 'needs follow-up':
-      case 'follow-up':
-        return Colors.orange.shade600;
-      case 'closed':
-        return Colors.grey.shade600;
-      default:
-        return Colors.purple.shade600;
-    }
+    return StatusColors.getShade600Color(status);
   }
 
   IconData _getTempIcon(String? temp) {
@@ -283,7 +320,7 @@ class _EnquiryListItem extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(enquiry.phoneNumber),
+              Text(enquiry.phoneNumber ?? '-'),
               const SizedBox(height: 4),
               if (enquiry.leadTemperature != null)
                 Row(

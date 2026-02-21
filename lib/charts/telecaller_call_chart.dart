@@ -142,14 +142,16 @@ class _TelecallerCallChartState extends State<TelecallerCallChart> {
           'Call Activity',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
-        TextButton.icon(
-          icon: const Icon(Icons.calendar_today_outlined, size: 16),
-          label: Text(
-            '${DateFormat.yMMMd().format(_selectedDateRange.start)} - '
-            '${DateFormat.yMMMd().format(_selectedDateRange.end)}',
-            overflow: TextOverflow.ellipsis,
+        Expanded(
+          child: TextButton.icon(
+            icon: const Icon(Icons.calendar_today_outlined, size: 16),
+            label: Text(
+              '${DateFormat.yMMMd().format(_selectedDateRange.start)} - '
+              '${DateFormat.yMMMd().format(_selectedDateRange.end)}',
+              overflow: TextOverflow.ellipsis,
+            ),
+            onPressed: () => _selectDateRange(context),
           ),
-          onPressed: () => _selectDateRange(context),
         ),
       ],
     );

@@ -45,7 +45,7 @@ class EnquiryFormModel {
     firstNameController.text = enquiry.firstName;
     middleNameController.text = enquiry.middleName ?? '';
     lastNameController.text = enquiry.lastName ?? '';
-    phoneController.text = enquiry.phoneNumber;
+    phoneController.text = enquiry.phoneNumber ?? '';
     emailController.text = enquiry.email ?? '';
     addressController.text = enquiry.address ?? '';
     pincodeController.text = enquiry.pincode?.toString() ?? '';
@@ -129,8 +129,9 @@ class EnquiryFormModel {
           ? int.tryParse(pincodeController.text)
           : null,
 
-      // School
+      // School - if "Add School" was selected (otherSchoolId), send the text for backend auto-creation
       'school': (selectedSchoolId == otherSchoolId) ? null : selectedSchoolId,
+      'school_name_text': (selectedSchoolId == otherSchoolId) ? otherSchoolController.text.trim() : '',
 
       // Referral + Course
       'referred_by': referredBy.toList(),

@@ -4,6 +4,7 @@ import 'package:dreamvision/widgets/back_button.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:logger/logger.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/user_model.dart';
 import '../../services/admin_user.dart';
 import '../../utils/global_error_handler.dart';
@@ -17,22 +18,70 @@ class UserListPage extends StatefulWidget {
 class _UserListPageState extends State<UserListPage> {
   final AdminUserService _adminUserService = AdminUserService();
   final _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  late SharedPreferences _prefs;
+  
   List<User> _allUsers = [];
   List<User> _filteredUsers = [];
   bool _isLoading = true;
   String? _error;
   Logger logger = Logger();
 
+  static const String _searchStorageKey = 'users_search';
+  static const String _scrollPositionStorageKey = 'users_scroll_position';
+
   @override
   void initState() {
     super.initState();
-    _refreshUsers();
+    _initializeAndLoad();
     _searchController.addListener(_filterUsers);
+  }
+
+  Future<void> _initializeAndLoad() async {
+    _prefs = await SharedPreferences.getInstance();
+    
+    // Restore search from storage
+    final savedSearch = _prefs.getString(_searchStorageKey) ?? '';
+    if (mounted && savedSearch.isNotEmpty) {
+      _searchController.text = savedSearch;
+    }
+    
+    await _refreshUsers();
+    
+    // Restore scroll position after data loads
+    if (mounted) {
+      await _restoreScrollPosition();
+    }
+  }
+
+  Future<void> _saveSearchToStorage(String query) async {
+    if (query.isEmpty) {
+      await _prefs.remove(_searchStorageKey);
+    } else {
+      await _prefs.setString(_searchStorageKey, query);
+    }
+  }
+
+  Future<void> _saveScrollPosition() async {
+    final position = _scrollController.hasClients 
+        ? _scrollController.offset 
+        : 0.0;
+    await _prefs.setDouble(_scrollPositionStorageKey, position);
+  }
+
+  Future<void> _restoreScrollPosition() async {
+    final savedPosition = _prefs.getDouble(_scrollPositionStorageKey) ?? 0.0;
+    if (_scrollController.hasClients && savedPosition > 0) {
+      await Future.delayed(const Duration(milliseconds: 50));
+      _scrollController.jumpTo(savedPosition);
+    }
   }
 
   @override
   void dispose() {
+    _saveScrollPosition();
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -59,6 +108,7 @@ class _UserListPageState extends State<UserListPage> {
 
   void _filterUsers() {
     final query = _searchController.text.toLowerCase();
+    _saveSearchToStorage(_searchController.text);
     setState(() {
       _filteredUsers = query.isEmpty
           ? _allUsers
@@ -190,6 +240,7 @@ class _UserListPageState extends State<UserListPage> {
     final cs = Theme.of(context).colorScheme;
 
     return ListView.separated(
+      controller: _scrollController,
       itemCount: _filteredUsers.length,
       separatorBuilder: (context, index) => const SizedBox(height: 8),
       itemBuilder: (context, index) {

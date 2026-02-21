@@ -73,6 +73,9 @@ class _SplashPageState extends State<SplashPage>
       case 'counselor': // tolerate spelling
         context.go('/counsellor');
         break;
+      case 'manager':
+        context.go('/manager');
+        break;
       case 'crm':
         context.go('/crm');
         break;
@@ -102,7 +105,7 @@ class _SplashPageState extends State<SplashPage>
             child: ScaleTransition(
               scale: _scaleAnimation,
               child: Image.asset(
-                'assets/login_bg.png',
+                'assets/logo.jpeg',
                 fit: BoxFit.contain,
                 errorBuilder: (context, error, stackTrace) {
                   return Column(

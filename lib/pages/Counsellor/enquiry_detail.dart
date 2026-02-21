@@ -9,6 +9,7 @@ import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'package:logger/logger.dart';
 import 'dart:async';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../dialogs/user_selection_dialog.dart';
 import '../../widgets/delete_confirmation_dialog.dart';
 import '../Telecaller/follow_up_sheet.dart';
@@ -188,6 +189,78 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
     );
   }
 
+  Future<void> _makeCall(String phoneNumber) async {
+    try {
+      final uri = Uri.parse('tel:$phoneNumber');
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      } else {
+        if (mounted) {
+          GlobalErrorHandler.error('Could not launch call');
+        }
+      }
+    } catch (e) {
+      _logger.e('Error making call: $e');
+      if (mounted) {
+        GlobalErrorHandler.error('Error making call: $e');
+      }
+    }
+  }
+
+
+
+  Future<void> _closeEnquiry(Enquiry enquiry) async {
+    // Show confirmation dialog
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Close Enquiry'),
+          content: Text(
+            'Are you sure you want to close this enquiry for ${enquiry.firstName}? '
+            'This will mark it as closed.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await _updateEnquiryStatus(enquiry.id, 'closed');
+                _refreshEnquiryData();
+              },
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _updateEnquiryStatus(int enquiryId, String newStatus) async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+
+      await _enquiryService.updateEnquiry(
+        enquiryId,
+        {'current_status': newStatus},
+      );
+
+      if (mounted) Navigator.pop(context);
+      GlobalErrorHandler.success('Enquiry status updated successfully!');
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      _logger.e('Failed to update enquiry status: $e');
+      GlobalErrorHandler.error('Failed to update status: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -203,17 +276,9 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
             snapshot.hasData &&
             enquiry != null) {
           fullName = '${enquiry.firstName} ${enquiry.lastName ?? ''}'.trim();
-          if (enquiry.assignedToCounsellorDetails == null) {
-            appBarActions.add(
-              TextButton.icon(
-                icon: const Icon(Icons.person_add_alt_1_outlined),
-                label: const Text('Assign Counsellor'),
-                onPressed: () =>
-                    _showUserSelectionDialog(context, 'Counsellor', enquiry.id),
-                style: TextButton.styleFrom(foregroundColor: cs.primary),
-              ),
-            );
-          }
+          
+          // Only show "Assign Counsellor" button for Admin/Manager roles
+          // (Counsellors can now access all enquiries, so no assignment needed)
           if (enquiry.assignedToTelecallerDetails == null) {
             appBarActions.add(
               TextButton.icon(
@@ -274,6 +339,21 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
                   shape: const CircleBorder(),
                   children: [
                     SpeedDialChild(
+                      child: const Icon(Icons.call_outlined),
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      label: 'Make Call',
+                      labelStyle: const TextStyle(fontSize: 14),
+                      onTap: () {
+                        final phone = enquiry.phoneNumber;
+                        if (phone != null && phone.isNotEmpty) {
+                          _makeCall(phone);
+                        } else {
+                          GlobalErrorHandler.error('No phone number available');
+                        }
+                      },
+                    ),
+                    SpeedDialChild(
                       child: const Icon(Icons.edit_outlined),
                       backgroundColor: Colors.indigo,
                       foregroundColor: Colors.white,
@@ -281,15 +361,22 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
                       labelStyle: const TextStyle(fontSize: 14),
                       onTap: () => _goToEditPage(context, enquiry),
                     ),
+                    if (enquiry.isAdmissionConfirmed)
+                      SpeedDialChild(
+                        child: const Icon(Icons.check_circle_outlined),
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                        label: 'Close Enquiry',
+                        labelStyle: const TextStyle(fontSize: 14),
+                        onTap: () => _closeEnquiry(enquiry),
+                      ),
                     SpeedDialChild(
-                      child: const Icon(Icons.delete),
-                      backgroundColor: Colors.red,
+                      child: const Icon(Icons.add_outlined),
+                      backgroundColor: Colors.purple,
                       foregroundColor: Colors.white,
-                      label: 'Delete Enquiry',
+                      label: 'Add Follow-up',
                       labelStyle: const TextStyle(fontSize: 14),
-                      onTap: () {
-                        _showDeleteEnquiryDialog(enquiry);
-                      },
+                      onTap: () => _showAddFollowUpSheet(context, enquiry),
                     ),
                     SpeedDialChild(
                       child: const Icon(Icons.history_outlined),
@@ -301,12 +388,14 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
                           _goToHistoryPage(context, enquiry.id, fullName),
                     ),
                     SpeedDialChild(
-                      child: const Icon(Icons.add_comment_outlined),
-                      backgroundColor: Colors.orange,
+                      child: const Icon(Icons.delete),
+                      backgroundColor: Colors.red.shade700,
                       foregroundColor: Colors.white,
-                      label: 'Add Follow-up',
+                      label: 'Delete',
                       labelStyle: const TextStyle(fontSize: 14),
-                      onTap: () => _showAddFollowUpSheet(context, enquiry),
+                      onTap: () {
+                        _showDeleteEnquiryDialog(enquiry);
+                      },
                     ),
                   ],
                 )
@@ -361,7 +450,6 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
               icon: Icons.admin_panel_settings_outlined,
               details: {
                 'Source': enquiry.sourceName,
-                'Assigned Counsellor': enquiry.assignedToCounsellorDetails,
                 'Assigned Telecaller': enquiry.assignedToTelecallerDetails,
                 'Created By': enquiry.createdByDetails,
                 'Updated By': enquiry.updatedByDetails,   
@@ -484,12 +572,13 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
         padding: const EdgeInsets.all(8.0),
         child: Column(
           children: [
-            _buildContactTile(
-              context,
-              icon: Icons.phone_outlined,
-              value: enquiry.phoneNumber,
-              label: 'Primary Phone',
-            ),
+            if (enquiry.phoneNumber != null && enquiry.phoneNumber!.isNotEmpty)
+              _buildContactTile(
+                context,
+                icon: Icons.phone_outlined,
+                value: enquiry.phoneNumber!,
+                label: 'Primary Phone',
+              ),
             if (enquiry.email != null && enquiry.email!.isNotEmpty)
               _buildContactTile(
                 context,

@@ -343,7 +343,7 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
               label: 'Date of Birth',
               initialValue: _formModel.selectedDob,
               onTap: () => _pickDate(context),
-              isRequired: true,
+              isRequired: false,
               onSaved: (value) {
                 if (value != null) {
                   _formModel.selectedDob = value;
@@ -457,7 +457,16 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
               value: _formModel.selectedSchoolId,
               controller: _formModel.schoolSearchController,
               onChanged: (id) {
-                setState(() => _formModel.selectedSchoolId = id);
+                setState(() {
+                  _formModel.selectedSchoolId = id;
+                  // If user selected "Add School" (id == -1), otherSchoolController should already have the text
+                  // from schoolSearchController. Just keep them in sync.
+                  if (id == EnquiryFormModel.otherSchoolId) {
+                    _formModel.otherSchoolController.text = _formModel.schoolSearchController.text;
+                  } else {
+                    _formModel.otherSchoolController.clear();
+                  }
+                });
               },
             ),
           ],

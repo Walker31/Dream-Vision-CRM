@@ -284,7 +284,7 @@ class _AddUserPageState extends State<AddUserPage> {
                     const SizedBox(height: 14),
                     DropdownButtonFormField<String>(
                       decoration: const InputDecoration(labelText: 'Role'),
-                      items: ['Admin', 'Counsellor', 'Telecaller']
+                      items: ['Admin', 'Counsellor', 'Telecaller', 'Manager']
                           .map((role) => DropdownMenuItem(value: role, child: Text(role)))
                           .toList(),
                       initialValue: _selectedRole,

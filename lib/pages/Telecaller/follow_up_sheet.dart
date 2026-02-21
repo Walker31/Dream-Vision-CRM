@@ -281,7 +281,7 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet>
                           "${widget.enquiry.firstName} ${widget.enquiry.lastName}"
                               .trim(),
                         ),
-                        _info("Mobile No.", widget.enquiry.phoneNumber),
+                        _info("Mobile No.", widget.enquiry.phoneNumber ?? '-'),
                         const SizedBox(height: 10),
                         _section("Follow-up Details"),
                         _cnrToggle(),

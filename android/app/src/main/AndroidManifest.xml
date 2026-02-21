@@ -12,9 +12,6 @@
 
     <!-- 📁 Storage permissions (migrate to scoped storage; removed MANAGE_EXTERNAL_STORAGE) -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="28" tools:replace="android:maxSdkVersion" />
-    <uses-permission
-        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="29" />
 
     <!-- 📞 Dialer access -->
     <queries>
@@ -25,7 +22,7 @@
     </queries>
 
     <application
-        android:label="Dream Vision CRM"
+        android:label="DV40 CRM"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 

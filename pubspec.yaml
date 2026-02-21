@@ -1,7 +1,7 @@
 name: dreamvision
 description: "A new Flutter project."
 publish_to: 'none'
-version: 1.0.1+3
+version: 1.0.4+8
 
 environment:
   sdk: ^3.8.1
@@ -55,4 +55,5 @@ flutter:
 flutter_icons:
   android: true
   ios: true
-  image_path: "assets/login_bg.png"
+  windows: true
+  image_path: "assets/logo.jpeg"

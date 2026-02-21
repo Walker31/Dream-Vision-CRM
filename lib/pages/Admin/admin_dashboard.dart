@@ -4,8 +4,10 @@
 
 import 'dart:async';
 import 'package:dreamvision/charts/enquiry_status_data.dart';
+import 'package:dreamvision/dialogs/bulk_upload_progress_dialog.dart';
 import 'package:dreamvision/services/enquiry_service.dart';
 import 'package:dreamvision/utils/global_error_handler.dart';
+import 'package:dreamvision/utils/status_colors.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
@@ -13,6 +15,7 @@ import 'package:go_router/go_router.dart';
 import 'package:logger/logger.dart';
 import 'package:open_filex/open_filex.dart';
 import '../../charts/telecaller_call_chart.dart';
+import '../../dialogs/telecaller_selection_dialog.dart';
 import '../../widgets/filter_bottom_sheet.dart';
 import 'paginated_enquiry_list.dart';
 
@@ -29,43 +32,56 @@ class _AdminDashboardState extends State<AdminDashboard>
   final Logger logger = Logger();
   late TabController _tabController;
 
-  final GlobalKey<PaginatedEnquiryListState> _unassignedListKey =
-      GlobalKey<PaginatedEnquiryListState>();
-  final GlobalKey<PaginatedEnquiryListState> _assignedListKey =
-      GlobalKey<PaginatedEnquiryListState>();
-
   late Future<Map<String, dynamic>> _summaryDataFuture;
   List<ChartData> _chartDataSource = [];
   int _unassignedCount = 0;
   int _assignedCount = 0;
+  Map<String, int> _statusCounts = {};
+  List<String> _allStatuses = [];
   bool _isUploading = false;
+  bool _isRefreshing = false; // Track refresh state for visual feedback
 
   String? _selectedStandard;
   String? _selectedStatus;
+  int? _selectedTelecallerId;
 
   final List<String> _standardOptions = ['8th', '9th', '10th', '11th', '12th'];
-  final List<String> _statusOptions = [
-    'interested',
-    'confirmed',
-    'closed',
-    'follow-up',
-  ];
+  final ScrollController _scrollController = ScrollController();
+  late final PageStorageBucket _unassignedBucket = PageStorageBucket();
+  late final PageStorageBucket _assignedBucket = PageStorageBucket();
+  final GlobalKey<State<PaginatedEnquiryList>> _unassignedListKey = GlobalKey();
+  final GlobalKey<State<PaginatedEnquiryList>> _assignedListKey = GlobalKey();
+  List<Map<String, dynamic>> _telecallerOptions = [];
+  bool _isLoadingTelecallers = true;
+  // Removed hardcoded _statusOptions - now fetched from API via statusNamesProvider
 
   @override
   void initState() {
     super.initState();
     _enquiryService = EnquiryService();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(_onTabChanged);
 
     _summaryDataFuture = _fetchSummaryData(
       standard: _selectedStandard,
       status: _selectedStatus,
+      telecallerId: _selectedTelecallerId,
     );
+    _fetchAllStatuses();
+    _fetchStatusCounts();
+    _fetchAssignedUnassignedCounts();
+    _fetchTelecallers();
+  }
+
+  void _onTabChanged() {
+    setState(() {}); // Rebuild to update IndexedStack
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -74,18 +90,115 @@ class _AdminDashboardState extends State<AdminDashboard>
       _summaryDataFuture = _fetchSummaryData(
         standard: _selectedStandard,
         status: _selectedStatus,
+        telecallerId: _selectedTelecallerId,
       );
     });
+    _fetchStatusCounts();
+    _fetchAssignedUnassignedCounts();
+  }
+
+  Future<void> _fetchTelecallers() async {
+    try {
+      final result = await _enquiryService.getAssignableUsers(
+        role: 'Telecaller',
+      );
+      if (mounted) {
+        setState(() {
+          _telecallerOptions = (result)
+              .whereType<Map<String, dynamic>>()
+              .toList();
+          _isLoadingTelecallers = false;
+        });
+      }
+    } catch (e) {
+      logger.e("Failed to fetch telecallers: $e");
+      if (mounted) {
+        setState(() => _isLoadingTelecallers = false);
+      }
+    }
+  }
+
+  Future<void> _fetchAllStatuses() async {
+    try {
+      final response = await _enquiryService.getEnquiryStatuses();
+      final statuses = (response)
+          .map((s) => (s as Map<String, dynamic>)['name'] as String)
+          .toList();
+      if (mounted) {
+        setState(() {
+          _allStatuses = statuses;
+        });
+      }
+    } catch (e) {
+      logger.e("Failed to fetch all statuses: $e");
+    }
+  }
+
+  Future<void> _fetchStatusCounts() async {
+    try {
+      final response = await _enquiryService.getStatusCounts(
+        standard: _selectedStandard,
+        status: _selectedStatus,
+        telecallerId: _selectedTelecallerId,
+      );
+      final List<dynamic> counts = response['status_counts'] ?? [];
+      final Map<String, int> countMap = {};
+
+      // Initialize all statuses with 0 count
+      for (var status in _allStatuses) {
+        countMap[status] = 0;
+      }
+
+      // Update with actual counts
+      for (var item in counts) {
+        if (item is Map<String, dynamic> && item['status'] != null) {
+          final count = item['count'];
+          countMap[item['status']] = count is int ? count : 0;
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _statusCounts = countMap;
+        });
+      }
+    } catch (e) {
+      logger.e("Failed to fetch status counts: $e");
+    }
+  }
+
+  /// Fetch accurate assigned/unassigned counts from dedicated API endpoint
+  /// Respects current filters (standard, status, telecaller)
+  Future<void> _fetchAssignedUnassignedCounts() async {
+    try {
+      final response = await _enquiryService.getAssignedUnassignedCounts(
+        standard: _selectedStandard,
+        status: _selectedStatus,
+        telecallerId: _selectedTelecallerId,
+      );
+      if (mounted) {
+        setState(() {
+          _unassignedCount = response['unassigned_count'] ?? 0;
+          _assignedCount = response['assigned_count'] ?? 0;
+        });
+      }
+      logger.i(
+        'Assigned/Unassigned counts: assigned=$_assignedCount, unassigned=$_unassignedCount (standard: $_selectedStandard, status: $_selectedStatus, telecaller: $_selectedTelecallerId)',
+      );
+    } catch (e) {
+      logger.e("Failed to fetch assigned/unassigned counts: $e");
+    }
   }
 
   Future<Map<String, dynamic>> _fetchSummaryData({
     String? standard,
     String? status,
+    int? telecallerId,
   }) async {
     try {
       final summaryData = await _enquiryService.getEnquiryStatusSummary(
         standard: standard,
         status: status,
+        telecallerId: telecallerId,
       );
 
       return summaryData;
@@ -96,23 +209,78 @@ class _AdminDashboardState extends State<AdminDashboard>
   }
 
   Future<void> _refreshAllData() async {
+    if (_isRefreshing) return; // Prevent multiple refresh attempts
+
     setState(() {
+      _isRefreshing = true;
       _summaryDataFuture = _fetchSummaryData(
         standard: _selectedStandard,
         status: _selectedStatus,
+        telecallerId: _selectedTelecallerId,
       );
     });
 
-    _unassignedListKey.currentState?.refreshWithFilters(
-      _selectedStandard,
-      _selectedStatus,
-    );
-    _assignedListKey.currentState?.refreshWithFilters(
-      _selectedStandard,
-      _selectedStatus,
-    );
+    try {
+      await _summaryDataFuture;
+      logger.i('✅ Summary data refreshed successfully');
 
-    await _summaryDataFuture;
+      // Refresh assigned/unassigned counts with error handling
+      try {
+        await _fetchAssignedUnassignedCounts();
+        logger.i(
+          '✅ Assigned/Unassigned counts refreshed: unassigned=$_unassignedCount, assigned=$_assignedCount',
+        );
+      } catch (e) {
+        logger.w('⚠️ Failed to refresh counts: $e');
+        // Don't fail the entire refresh if only counts fail
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Note: Could not refresh counts, but dashboard updated',
+              ),
+              duration: const Duration(seconds: 3),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+
+      // Refresh paginated lists with current filters
+      if (_unassignedListKey.currentState is PaginatedEnquiryListState) {
+        (_unassignedListKey.currentState as PaginatedEnquiryListState)
+            .refreshWithFilters(
+              _selectedStandard,
+              _selectedStatus,
+              _selectedTelecallerId,
+            );
+      }
+      if (_assignedListKey.currentState is PaginatedEnquiryListState) {
+        (_assignedListKey.currentState as PaginatedEnquiryListState)
+            .refreshWithFilters(
+              _selectedStandard,
+              _selectedStatus,
+              _selectedTelecallerId,
+            );
+      }
+
+      logger.i('✅ All dashboard data refreshed successfully');
+    } catch (e, st) {
+      logger.e('❌ Dashboard refresh failed: $e', stackTrace: st);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Failed to refresh dashboard'),
+            duration: const Duration(seconds: 3),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isRefreshing = false);
+      }
+    }
   }
 
   int _safeInt(dynamic value) {
@@ -137,7 +305,6 @@ class _AdminDashboardState extends State<AdminDashboard>
 
   List<ChartData> _buildChartDataFromSummary(List<dynamic> summaryData) {
     if (summaryData.isEmpty) {
-      logger.i('buildChartDataFromSummary: empty summaryData');
       return [];
     }
 
@@ -174,30 +341,23 @@ class _AdminDashboardState extends State<AdminDashboard>
       chartList.add(ChartData(status, percentage, _getStatusColor(status)));
     }
 
-    logger.i(
-      'buildChartDataFromSummary: total=$total, chartList=${chartList.map((e) => '${e.status}:${e.value.toStringAsFixed(1)}').toList()}',
-    );
-
     return chartList;
   }
 
   Color _getStatusColor(String? status) {
-    final key = (status ?? '').trim().toLowerCase();
-
-    final map = {
-      'interested': Colors.blue.shade600,
-      'confirmed': Colors.green.shade600,
-      'follow-up': Colors.orange.shade600,
-      'closed': Colors.grey.shade600,
-      'unknown': Colors.purple.shade400,
-    };
-
-    return map[key] ?? Colors.purple.shade600;
+    return StatusColors.getShade600Color(status);
   }
 
   Future<void> _pickAndUploadFile() async {
     if (_isUploading) return;
 
+    // First, show modal to select telecaller
+    final selectedTelecaller = await _showTelecallerSelectionModal();
+    if (selectedTelecaller == null) {
+      return; // User cancelled
+    }
+
+    // Then pick file
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['xlsx', 'csv'],
@@ -208,10 +368,43 @@ class _AdminDashboardState extends State<AdminDashboard>
       setState(() => _isUploading = true);
 
       try {
-        final response = await _enquiryService.bulkUploadEnquiries(filePath);
-        GlobalErrorHandler.success(response['message'] ?? 'Upload successful!');
+        // Start the upload and get session ID
+        final response = await _enquiryService.bulkUploadEnquiries(
+          filePath,
+          telecallerId: selectedTelecaller['id'],
+        );
 
-        await _refreshAllData();
+        final sessionId = response['session_id'];
+        final totalRecords = response['total_records'] ?? 0;
+
+        if (mounted && sessionId != null) {
+          // Show progress dialog
+          final result = await showDialog<Map<String, dynamic>>(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => BulkUploadProgressDialog(
+              sessionId: sessionId,
+              totalRecords: totalRecords,
+            ),
+          );
+
+          if (result != null && result['total_created'] != null) {
+            final created = result['total_created'];
+            final updated = result['total_updated'];
+            final assignedName =
+                result['assigned_telecaller_name'] ?? 'Unknown';
+            GlobalErrorHandler.success(
+              '✓ Successfully imported $created new enquiries\n'
+              '◆ Updated $updated existing enquiries\n'
+              '👤 Assigned to: $assignedName\n'
+              '📊 Counts will update in 1-2 seconds',
+            );
+
+            // Small delay to ensure backend cache is cleared
+            await Future.delayed(const Duration(seconds: 1));
+            await _refreshAllData();
+          }
+        }
       } catch (e, st) {
         logger.e("Bulk upload failed", error: e, stackTrace: st);
         GlobalErrorHandler.error('Upload failed: $e');
@@ -221,44 +414,86 @@ class _AdminDashboardState extends State<AdminDashboard>
     }
   }
 
-  void _applyFilters(String? standard, String? status) {
+  Future<Map<String, dynamic>?> _showTelecallerSelectionModal() async {
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return TelecallerSelectionDialog(
+          enquiryService: _enquiryService,
+          logger: logger,
+        );
+      },
+    );
+  }
+
+  void _applyFilters(
+    String? standard,
+    String? status,
+    int? telecallerId,
+    String? teleName,
+  ) {
     setState(() {
       _selectedStandard = standard;
       _selectedStatus = status;
+      _selectedTelecallerId = telecallerId;
 
       _summaryDataFuture = _fetchSummaryData(
         standard: standard,
         status: status,
+        telecallerId: telecallerId,
       );
     });
 
-    _unassignedListKey.currentState?.refreshWithFilters(standard, status);
-    _assignedListKey.currentState?.refreshWithFilters(standard, status);
+    _fetchStatusCounts();
   }
 
   void _clearFilters() {
     setState(() {
       _selectedStandard = null;
       _selectedStatus = null;
+      _selectedTelecallerId = null;
 
-      _summaryDataFuture = _fetchSummaryData(standard: null, status: null);
+      _summaryDataFuture = _fetchSummaryData(
+        standard: null,
+        status: null,
+        telecallerId: null,
+      );
     });
 
-    _unassignedListKey.currentState?.refreshWithFilters(null, null);
-    _assignedListKey.currentState?.refreshWithFilters(null, null);
+    _fetchStatusCounts();
   }
 
   void _openFilterSheet() {
+    // Ensure status counts are fetched before opening
+    _fetchStatusCounts();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (context) {
+        // Convert comma-separated strings back to Sets for filter sheet
+        final initialStandards = _selectedStandard != null
+            ? _selectedStandard!.split(',').map((s) => s.trim()).toSet()
+            : <String>{};
+        final initialStatuses = _selectedStatus != null
+            ? _selectedStatus!.split(',').map((s) => s.trim()).toSet()
+            : <String>{};
+
         return EnquiryFilterBottomSheet(
-          initialStandard: _selectedStandard,
-          initialStatus: _selectedStatus,
+          initialStandards: initialStandards,
+          initialStatuses: initialStatuses,
+          initialTelecallerId: _selectedTelecallerId,
           standardOptions: _standardOptions,
-          statusOptions: _statusOptions,
-          onApplyFilters: _applyFilters,
+          statusCounts: _statusCounts,
+          telecallerOptions: _telecallerOptions,
+          isLoadingTelecallers: _isLoadingTelecallers,
+          onApplyFilters: (standards, statuses, [telecallerId, teleName]) {
+            // Convert Set to comma-separated string for backend (supports multiple values)
+            final standard = standards.isNotEmpty ? standards.join(',') : null;
+            final status = statuses.isNotEmpty ? statuses.join(',') : null;
+            _applyFilters(standard, status, telecallerId, teleName);
+          },
           onClearFilters: _clearFilters,
         );
       },
@@ -272,34 +507,42 @@ class _AdminDashboardState extends State<AdminDashboard>
         scrolledUnderElevation: 0,
         surfaceTintColor: Colors.transparent,
         backgroundColor: Theme.of(context).colorScheme.surface,
-        title: const Text('Admin Dashboard'),
-        leading: Builder(
-          builder: (context) => IconButton(
-            icon: Image.asset(
-              'assets/login_bg.png',
-              errorBuilder: (c, e, s) => const Icon(Icons.menu),
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 16.0),
+          child: Builder(
+            builder: (context) => GestureDetector(
+              onTap: () {
+                Scaffold.of(context).openDrawer();
+              },
+              child: Image.asset(
+                'assets/logo.jpeg',
+                width: 40,
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    width: 40,
+                    height: 40,
+                    color: Colors.grey[700],
+                    child: const Center(
+                      child: Text(
+                        'DV',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
-            onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
+        title: const Text('Admin Dashboard'),
         actions: [
-          FilledButton.tonalIcon(
-            onPressed: _isUploading ? null : _pickAndUploadFile,
-            icon: _isUploading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.upload_file),
-            label: Text(_isUploading ? 'Uploading...' : 'Bulk Add'),
-          ),
-          const SizedBox(width: 12),
           IconButton(
             icon: const Icon(Icons.filter_list),
             onPressed: _openFilterSheet,
           ),
-          const SizedBox(width: 8),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => context.push('/settings'),
@@ -320,11 +563,7 @@ class _AdminDashboardState extends State<AdminDashboard>
           }
 
           if (snapshot.hasData) {
-
             final data = snapshot.data!;
-            logger.i('Summary Data fetched: $data');
-            _unassignedCount = data['unassigned_count'] ?? 0;
-            _assignedCount = data['assigned_count'] ?? 0;
             _chartDataSource = _buildChartDataFromSummary(
               data['chart_data'] ?? [],
             );
@@ -341,6 +580,23 @@ class _AdminDashboardState extends State<AdminDashboard>
       child: Column(
         children: [
           const SizedBox(height: 72),
+          ListTile(
+            title: const Text('Bulk Upload Enquiries'),
+            leading: _isUploading
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.upload_file),
+            enabled: !_isUploading,
+            onTap: _isUploading
+                ? null
+                : () {
+                    Navigator.pop(context);
+                    _pickAndUploadFile();
+                  },
+          ),
           ListTile(
             title: const Text('Manage Users'),
             leading: const Icon(Icons.group_outlined),
@@ -449,6 +705,7 @@ class _AdminDashboardState extends State<AdminDashboard>
       child: RefreshIndicator(
         onRefresh: _refreshAllData,
         child: NestedScrollView(
+          controller: _scrollController,
           headerSliverBuilder: (context, innerBoxIsScrolled) => [
             SliverToBoxAdapter(
               child: Padding(
@@ -457,75 +714,84 @@ class _AdminDashboardState extends State<AdminDashboard>
                   children: [
                     const TelecallerCallChart(),
                     const SizedBox(height: 16),
-                    EnquiryStatusChartCard(chartDataSource: _chartDataSource),
+                    EnquiryStatusChartCard(
+                      chartDataSource: _chartDataSource,
+                      statusCounts: _statusCounts,
+                    ),
                     const SizedBox(height: 16),
                   ],
                 ),
               ),
             ),
-            SliverPersistentHeader(
-              delegate: _SliverAppBarDelegate(
-                TabBar(
-                  controller: _tabController,
-                  tabs: [
-                    Tab(text: 'Unassigned ($_unassignedCount)'),
-                    Tab(text: 'Assigned ($_assignedCount)'),
-                  ],
-                ),
-              ),
+            SliverAppBar(
               pinned: true,
+              toolbarHeight: 48,
+              automaticallyImplyLeading: false,
+              backgroundColor: Theme.of(context).colorScheme.surface,
+              elevation: 0,
+              flexibleSpace: Row(
+                children: [
+                  Expanded(
+                    child: TabBar(
+                      controller: _tabController,
+                      tabs: [
+                        Tab(text: 'Unassigned ($_unassignedCount)'),
+                        Tab(text: 'Assigned ($_assignedCount)'),
+                      ],
+                    ),
+                  ),
+                  if (_isRefreshing)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8.0),
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation(
+                            Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    IconButton(
+                      icon: const Icon(Icons.refresh),
+                      tooltip: 'Refresh counts',
+                      onPressed: _refreshAllData,
+                      iconSize: 20,
+                    ),
+                ],
+              ),
             ),
           ],
-          body: TabBarView(
-            controller: _tabController,
+          body: IndexedStack(
+            index: _tabController.index,
             children: [
-              PaginatedEnquiryList(
-                key: _unassignedListKey,
-                type: EnquiryListType.unassigned,
-                initialStandard: _selectedStandard,
-                initialStatus: _selectedStatus,
-                onChanged: _refreshCountsOnly,
+              PageStorage(
+                bucket: _unassignedBucket,
+                child: PaginatedEnquiryList(
+                  key: _unassignedListKey,
+                  type: EnquiryListType.unassigned,
+                  initialStandard: _selectedStandard,
+                  initialStatus: _selectedStatus,
+                  onChanged: _refreshCountsOnly,
+                ),
               ),
-              PaginatedEnquiryList(
-                key: _assignedListKey,
-                type: EnquiryListType.assigned,
-                initialStandard: _selectedStandard,
-                initialStatus: _selectedStatus,
-                onChanged: _refreshCountsOnly,
+              PageStorage(
+                bucket: _assignedBucket,
+                child: PaginatedEnquiryList(
+                  key: _assignedListKey,
+                  type: EnquiryListType.assigned,
+                  initialStandard: _selectedStandard,
+                  initialStatus: _selectedStatus,
+                  onChanged: _refreshCountsOnly,
+                ),
               ),
             ],
           ),
         ),
       ),
     );
-  }
-}
-
-class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
-  _SliverAppBarDelegate(this._tabBar);
-
-  final TabBar _tabBar;
-
-  @override
-  double get minExtent => _tabBar.preferredSize.height;
-
-  @override
-  double get maxExtent => _tabBar.preferredSize.height;
-
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    return Container(
-      color: Theme.of(context).colorScheme.surface,
-      child: _tabBar,
-    );
-  }
-
-  @override
-  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) {
-    return true;
   }
 }

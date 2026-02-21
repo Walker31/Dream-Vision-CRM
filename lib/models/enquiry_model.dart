@@ -6,20 +6,22 @@ class Enquiry {
   final List<dynamic>? academicPerformance;
   final List<Map<String, dynamic>> exams;
 
-  final Map<String, dynamic>? assignedToCounsellorDetails;
   final Map<String, dynamic>? assignedToTelecallerDetails;
 
-  final Map<String, dynamic>? createdByDetails;    // NEW
-  final Map<String, dynamic>? updatedByDetails;    // NEW
+  final Map<String, dynamic>? createdByDetails;
+  final Map<String, dynamic>? updatedByDetails;
 
   final String? currentStatusName;
   final String? sourceName;
+  
+  // Lightweight serializer fields (flat names)
+  final String? assignedToTelecallerName;
 
   final String firstName;
   final String? middleName;
   final String? lastName;
   final String? dateOfBirth;
-  final String phoneNumber;
+  final String? phoneNumber;
   final String? email;
   final String? address;
   final int? pincode;
@@ -45,17 +47,17 @@ class Enquiry {
     required this.followUps,
     this.academicPerformance,
     this.exams = const [],
-    required this.assignedToCounsellorDetails,
     required this.assignedToTelecallerDetails,
     this.createdByDetails,
     this.updatedByDetails,
     required this.currentStatusName,
     required this.sourceName,
+    this.assignedToTelecallerName,
     required this.firstName,
     this.middleName,
     this.lastName,
     this.dateOfBirth,
-    required this.phoneNumber,
+    this.phoneNumber,
     this.nextFollowUp,
     this.email,
     this.address,
@@ -79,29 +81,31 @@ class Enquiry {
 
   factory Enquiry.fromJson(Map<String, dynamic> json) {
     return Enquiry(
-      id: json['id'],
+      id: json['id'] ?? 0,
       interactions: json['interactions'] ?? [],
       followUps: json['follow_ups'] ?? [],
       academicPerformance: json['academic_performance'],
       exams: (json['exams'] as List?)?.cast<Map<String, dynamic>>() ?? [],
 
-      assignedToCounsellorDetails: json['assigned_to_counsellor_details'],
       assignedToTelecallerDetails: json['assigned_to_telecaller_details'],
 
-      createdByDetails: json['created_by_details'],    // NEW
-      updatedByDetails: json['updated_by_details'],    // NEW
+      createdByDetails: json['created_by_details'],
+      updatedByDetails: json['updated_by_details'],
 
-      currentStatusName: json['current_status_name'],
-      sourceName: json['source_name'],
+      currentStatusName: json['current_status_name'] as String?,
+      sourceName: json['source_name'] as String?,
+      
+      // Handle both lightweight (flat names) and full serializers
+      assignedToTelecallerName: json['assigned_to_telecaller_name'] as String?,
 
-      firstName: json['first_name'],
-      middleName: json['middle_name'],
-      lastName: json['last_name'],
-      dateOfBirth: json['date_of_birth'],
-      phoneNumber: json['phone_number'],
-      email: json['email'],
-      address: json['address'],
-      schoolName: json['school_name'],
+      firstName: json['first_name'] ?? 'Unknown',
+      middleName: json['middle_name'] as String?,
+      lastName: json['last_name'] as String?,
+      dateOfBirth: json['date_of_birth'] as String?,
+      phoneNumber: json['phone_number'] as String?,
+      email: json['email'] as String?,
+      address: json['address'] as String?,
+      schoolName: json['school_name'] as String?,
 
       pincode: json['pincode'] as int?,
 
@@ -109,23 +113,23 @@ class Enquiry {
           ? List<String>.from(json['referred_by'])
           : [],
 
-      fatherPhoneNumber: json['father_phone_number'],
-      motherPhoneNumber: json['mother_phone_number'],
-      fatherOccupation: json['father_occupation'],
+      fatherPhoneNumber: json['father_phone_number'] as String?,
+      motherPhoneNumber: json['mother_phone_number'] as String?,
+      fatherOccupation: json['father_occupation'] as String?,
 
-      enquiringForStandard: json['enquiring_for_standard'],
-      enquiringForBoard: json['enquiring_for_board'],
-      enquiringForExam: json['enquiring_for_exam'],
+      enquiringForStandard: json['enquiring_for_standard'] as String?,
+      enquiringForBoard: json['enquiring_for_board'] as String?,
+      enquiringForExam: json['enquiring_for_exam'] as String?,
 
-      leadTemperature: json['lead_temperature'],
-      totalFeesDecided: json['total_fees_decided'],
+      leadTemperature: json['lead_temperature'] as String?,
+      totalFeesDecided: json['total_fees_decided'] as String?,
       installmentsAgreed: json['installments_agreed'] as int?,
       isAdmissionConfirmed: json['is_admission_confirmed'] ?? false,
-      referral: json['referral'],
+      referral: json['referral'] as String?,
 
-      createdAt: json['created_at'],
-      updatedAt: json['updated_at'],
-      nextFollowUp: json['next_follow_up'],
+      createdAt: json['created_at'] ?? '',
+      updatedAt: json['updated_at'] ?? '',
+      nextFollowUp: json['next_follow_up'] as String?,
     );
   }
 
@@ -138,14 +142,14 @@ class Enquiry {
       'academic_performance': academicPerformance,
       'exams': exams,
 
-      'assigned_to_counsellor_details': assignedToCounsellorDetails,
       'assigned_to_telecaller_details': assignedToTelecallerDetails,
 
-      'created_by_details': createdByDetails,      // NEW
-      'updated_by_details': updatedByDetails,      // NEW
+      'created_by_details': createdByDetails,
+      'updated_by_details': updatedByDetails,
 
       'current_status_name': currentStatusName,
       'source_name': sourceName,
+      'assigned_to_telecaller_name': assignedToTelecallerName,
       'first_name': firstName,
       'middle_name': middleName,
       'last_name': lastName,

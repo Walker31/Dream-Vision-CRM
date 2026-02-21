@@ -20,24 +20,63 @@ class _SettingsState extends State<Settings> {
 
     return showDialog<void>(
       context: context,
-      barrierDismissible: false, // User must tap button!
+      barrierDismissible: false,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Confirm Logout'),
-          content: const SingleChildScrollView(
-            child: ListBody(
-              children: <Widget>[Text('Are you sure you want to log out?')],
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: Theme.of(context).dividerColor,
+              width: 1,
             ),
           ),
+          title: Row(
+            children: [
+              Icon(
+                Icons.logout_rounded,
+                color: Theme.of(context).colorScheme.error,
+                size: 28,
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Confirm Logout',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          content: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'Are you sure you want to log out?',
+              style: TextStyle(
+                fontSize: 14,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+          ),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           actions: <Widget>[
             TextButton(
-              child: const Text('Cancel'),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
               onPressed: () {
                 Navigator.of(context).pop();
               },
+              child: Text(
+                'Cancel',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
-            TextButton(
-              child: const Text('Logout'),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
               onPressed: () async {
                 Navigator.of(context).pop();
                 await authProvider.logout();
@@ -45,6 +84,10 @@ class _SettingsState extends State<Settings> {
                   context.go('/login');
                 }
               },
+              child: const Text(
+                'Logout',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
             ),
           ],
         );

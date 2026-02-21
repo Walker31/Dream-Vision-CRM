@@ -31,20 +31,17 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
   String? _error;
   String _searchQuery = '';
   Map<String, int> _statusCounts = {};
-  int _cnrCount = 0;
+  List<String> _allStatuses = [];
   bool _isCnrFilterEnabled = false;
+  int _totalCount = 0;
 
-  final List<String> _statusOptions = [
-    'Interested',
-    'Follow-Up',
-    'Closed',
-    'Confirmed',
-  ];
+  // Removed hardcoded _statusOptions - now fetched from API via statusNamesProvider
   final Set<String> _selectedStatuses = {};
 
   @override
   void initState() {
     super.initState();
+    _fetchAllStatuses();
     _fetchEnquiries(page: 1);
     _fetchStatusCounts();
     _scrollController.addListener(_onScroll);
@@ -106,6 +103,7 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
       final results = response['results'] as List<dynamic>;
       final newEnquiries = results.map((e) => Enquiry.fromJson(e)).toList();
       final hasNext = response['next'] != null;
+      final totalCount = response['count'] as int? ?? 0;
 
       if (!mounted) return;
 
@@ -114,7 +112,8 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
           _enquiries = newEnquiries;
           _currentPage = 1;
           _hasNextPage = hasNext;
-          _animateItems = List<bool>.filled(_enquiries.length, false);
+          _totalCount = totalCount;
+          _animateItems = List<bool>.filled(_enquiries.length, false, growable: true);
         });
 
         for (int i = 0; i < _enquiries.length; i++) {
@@ -130,6 +129,7 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
           _enquiries.addAll(newEnquiries);
           _currentPage = page;
           _hasNextPage = hasNext;
+          _totalCount = totalCount;
           _animateItems.addAll(List<bool>.filled(newEnquiries.length, false));
         });
 
@@ -176,6 +176,200 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
     await _fetchEnquiries(page: 1);
   }
 
+  void _openFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // --- Grab handle ---
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: cs.outlineVariant,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // --- Header ---
+                    Row(
+                      children: [
+                        const Text(
+                          "Filters",
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: () {
+                            setModalState(() {
+                              _selectedStatuses.clear();
+                              _isCnrFilterEnabled = false;
+                            });
+                          },
+                          child: const Text("Reset"),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // --- Status Filter ---
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        "Status",
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: cs.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    
+                    if (_statusCounts.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Text(
+                          'No statuses available',
+                          style: TextStyle(color: cs.onSurfaceVariant),
+                        ),
+                      )
+                    else
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 10,
+                        children: _statusCounts.entries.map((entry) {
+                          final status = entry.key;
+                          final count = entry.value;
+                          final selected = _selectedStatuses.contains(status);
+
+                          return ChoiceChip(
+                            showCheckmark: false,
+                            label: Text(
+                              '${status[0].toUpperCase()}${status.substring(1)} ($count)',
+                              style: TextStyle(
+                                color: selected ? cs.onPrimary : cs.onSurfaceVariant,
+                              ),
+                            ),
+                            selected: selected,
+                            selectedColor: cs.primary,
+                            backgroundColor: cs.surfaceContainerHighest,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(22),
+                            ),
+                            onSelected: (_) {
+                              setModalState(() {
+                                if (selected) {
+                                  _selectedStatuses.remove(status);
+                                } else {
+                                  _selectedStatuses.add(status);
+                                }
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+
+                    const SizedBox(height: 22),
+
+                    // --- CNR Filter ---
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        "Call Not Received (CNR)",
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: cs.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 10,
+                      children: [
+                        ChoiceChip(
+                          showCheckmark: false,
+                          label: Text(
+                            'CNR Only',
+                            style: TextStyle(
+                              color: _isCnrFilterEnabled ? cs.onPrimary : cs.onSurfaceVariant,
+                            ),
+                          ),
+                          selected: _isCnrFilterEnabled,
+                          selectedColor: cs.primary,
+                          backgroundColor: cs.surfaceContainerHighest,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(22),
+                          ),
+                          onSelected: (_) {
+                            setModalState(() {
+                              _isCnrFilterEnabled = !_isCnrFilterEnabled;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 28),
+
+                    // --- Apply Button ---
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          setState(() {});
+                          _fetchEnquiries(page: 1);
+                          _fetchStatusCounts();
+                        },
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text("Apply Filters"),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _fetchAllStatuses() async {
+    try {
+      final response = await _enquiryService.getEnquiryStatuses();
+      final statuses = (response)
+          .map((s) => (s as Map<String, dynamic>)['name'] as String)
+          .toList();
+      if (mounted) {
+        setState(() {
+          _allStatuses = statuses;
+        });
+      }
+    } catch (e) {
+      logger.e("Failed to fetch all statuses: $e");
+    }
+  }
+
   Future<void> _fetchStatusCounts() async {
     try {
       final retryPolicy = RetryPolicy();
@@ -185,11 +379,19 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
       final response = await retryPolicy.execute(
         () => _enquiryService.getStatusCounts(
           search: _searchQuery.isNotEmpty ? _searchQuery : null,
+          cnr: _isCnrFilterEnabled ? 'true' : null,
           // DO NOT pass status filter here - we want counts for ALL statuses
         ),
       );
       final List<dynamic> counts = response['status_counts'] ?? [];
       final Map<String, int> countMap = {};
+      
+      // Initialize all statuses with 0 count
+      for (var status in _allStatuses) {
+        countMap[status] = 0;
+      }
+      
+      // Update with actual counts
       for (var item in counts) {
         if (item is Map<String, dynamic> && item['status'] != null) {
           final count = item['count'];
@@ -198,13 +400,10 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
       }
 
       // Extract CNR count
-      final cnrCountValue = response['cnr_count'];
-      final cnrCount = cnrCountValue is int ? cnrCountValue : 0;
 
       if (mounted) {
         setState(() {
           _statusCounts = countMap;
-          _cnrCount = cnrCount;
         });
       }
     } catch (e) {
@@ -254,29 +453,35 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
         leading: Padding(
           padding: const EdgeInsets.only(left: 16.0),
           child: Image.asset(
-            'assets/login_bg.png',
-            width: 50,
-            errorBuilder: (_, __, ___) => Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                color: cs.surfaceContainerHighest,
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: Text(
-                  'DV',
-                  style: TextStyle(
-                    color: cs.onSurfaceVariant,
-                    fontWeight: FontWeight.bold,
+            'assets/logo.jpeg',
+            width: 40,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHighest,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    'DV',
+                    style: TextStyle(
+                      color: cs.onSurfaceVariant,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         ),
         title: const Text('Telecalling Dashboard'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.filter_list),
+            onPressed: _openFilterSheet,
+          ),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => context.push('/settings'),
@@ -372,178 +577,27 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
                   ),
                 ),
               ),
-
-              IconButton(
-                icon: const Icon(Icons.filter_list_rounded),
-                tooltip: 'Filter',
-                onPressed: () {
-                  showModalBottomSheet(
-                    context: context,
-                    builder: (BuildContext context) {
-                      return StatefulBuilder(
-                        builder: (BuildContext context, StateSetter setModalState) {
-                          return Container(
-                            decoration: BoxDecoration(
-                              color: cs.surface,
-                              borderRadius: const BorderRadius.only(
-                                topLeft: Radius.circular(20),
-                                topRight: Radius.circular(20),
-                              ),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  // Header
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'Filter by Status',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.titleLarge,
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.close),
-                                        onPressed: () => Navigator.pop(context),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 16),
-
-                                  // Checkbox list
-                                  Flexible(
-                                    child: SingleChildScrollView(
-                                      child: Column(
-                                        children: [
-                                          ..._statusOptions.map((status) {
-                                            final isSelected = _selectedStatuses
-                                                .contains(status);
-                                            return CheckboxListTile(
-                                              title: Text(
-                                                status,
-                                                style: Theme.of(
-                                                  context,
-                                                ).textTheme.bodyMedium,
-                                              ),
-                                              subtitle: Text(
-                                                'Count: ${_statusCounts[status] ?? 0}',
-                                                style: Theme.of(
-                                                  context,
-                                                ).textTheme.bodySmall,
-                                              ),
-                                              value: isSelected,
-                                              onChanged: (bool? value) {
-                                                setModalState(() {
-                                                  if (value == true) {
-                                                    _selectedStatuses.add(
-                                                      status,
-                                                    );
-                                                  } else {
-                                                    _selectedStatuses.remove(
-                                                      status,
-                                                    );
-                                                  }
-                                                });
-                                              },
-                                              controlAffinity:
-                                                  ListTileControlAffinity
-                                                      .leading,
-                                            );
-                                          }),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                  // Divider
-                                  const Divider(height: 24),
-
-                                  // CNR Filter
-                                  CheckboxListTile(
-                                    title: Text(
-                                      'CNR (Call Not Received)',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodyMedium,
-                                    ),
-                                    subtitle: Text(
-                                      'Count: $_cnrCount',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
-                                    ),
-                                    value: _isCnrFilterEnabled,
-                                    onChanged: (bool? value) {
-                                      setModalState(() {
-                                        _isCnrFilterEnabled = value ?? false;
-                                      });
-                                    },
-                                    controlAffinity:
-                                        ListTileControlAffinity.leading,
-                                  ),
-
-                                  const SizedBox(height: 24),
-
-                                  // Action buttons
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: OutlinedButton.icon(
-                                          icon: const Icon(Icons.clear),
-                                          label: const Text('Clear All'),
-                                          onPressed: () {
-                                            setModalState(() {
-                                              _selectedStatuses.clear();
-                                              _isCnrFilterEnabled = false;
-                                            });
-                                          },
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: FilledButton.icon(
-                                          icon: const Icon(Icons.check),
-                                          label: const Text('Apply'),
-                                          onPressed: () {
-                                            Navigator.pop(context);
-                                            _refresh();
-                                            _fetchStatusCounts();
-                                          },
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  );
-                },
-                style: IconButton.styleFrom(
-                  backgroundColor: cs.surfaceContainerHighest.withValues(
-                    alpha: 0.5,
-                  ),
-                  foregroundColor: cs.onSurfaceVariant,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Assigned Leads',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              Text(
+                'Total: $_totalCount',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: cs.onSurfaceVariant,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 16),
-          const Text(
-            'Assigned Leads',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
           _buildLeadsList(),
         ],
       ),
@@ -577,9 +631,10 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
     late String label;
     late IconData icon;
 
-    // Skip overdue display for Converted enquiries (they're complete)
-    final isConverted = status.isNotEmpty && status == 'Converted';
-    if (targetDate.isBefore(now) && !isConverted) {
+    // Skip overdue display for final statuses (Confirmed or Closed = enquiry complete)
+    final isFinalStatus = status.isNotEmpty && 
+        (status.toLowerCase() == 'confirmed' || status.toLowerCase() == 'closed');
+    if (targetDate.isBefore(now) && !isFinalStatus) {
       bgColor = cs.errorContainer;
       textColor = cs.error;
       label = "Overdue";
@@ -719,6 +774,7 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
                   ? _animateItems[index]
                   : true;
 
+                  logger.i(enquiry.toJson());
               return AnimatedOpacity(
                 opacity: animated ? 1 : 0,
                 duration: const Duration(milliseconds: 400),
@@ -783,8 +839,14 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
                                 ),
                                 IconButton.filledTonal(
                                   icon: const Icon(Icons.call, size: 20),
-                                  onPressed: () =>
-                                      _makePhoneCall(enquiry.phoneNumber),
+                                  onPressed: ((enquiry.fatherPhoneNumber != null && enquiry.fatherPhoneNumber!.isNotEmpty) ||
+                                              (enquiry.phoneNumber != null && enquiry.phoneNumber!.isNotEmpty))
+                                      ? () => _makePhoneCall(
+                                            enquiry.fatherPhoneNumber != null && enquiry.fatherPhoneNumber!.isNotEmpty
+                                                ? enquiry.fatherPhoneNumber!
+                                                : enquiry.phoneNumber!,
+                                          )
+                                      : null,
                                   style: IconButton.styleFrom(
                                     backgroundColor: Colors.green.withValues(
                                       alpha: 0.15,

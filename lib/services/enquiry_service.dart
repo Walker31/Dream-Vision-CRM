@@ -1,17 +1,23 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:dreamvision/config/constants.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:logger/logger.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 class EnquiryService {
   static final EnquiryService _instance = EnquiryService._internal();
-  factory EnquiryService() => _instance;
+  static bool _initialized = false;
+  
+  factory EnquiryService() {
+    if (!_initialized) {
+      _instance._init();
+      _initialized = true;
+    }
+    return _instance;
+  }
 
   final Logger logger = Logger();
   final _storage = const FlutterSecureStorage();
@@ -20,10 +26,11 @@ class EnquiryService {
   static const String _baseUrl = '$baseUrl/crm';
 
   EnquiryService._internal() {
-    _init();
+    _initSync();
   }
 
-  Future<void> _init() async {
+  /// Synchronous initialization to set up Dio immediately
+  void _initSync() {
     _dio = Dio(
       BaseOptions(
         baseUrl: _baseUrl,
@@ -49,6 +56,11 @@ class EnquiryService {
         },
       ),
     );
+  }
+
+  /// Async initialization (if needed in future)
+  Future<void> _init() async {
+    // Placeholder for any async initialization that might be needed
   }
 
   // ---------------------------------------------------------------------------
@@ -116,6 +128,7 @@ class EnquiryService {
     String? standard,
     String? status,
     String? cnr,
+    int? telecallerId,
   }) async {
     try {
       final response = await _dio.get(
@@ -126,6 +139,7 @@ class EnquiryService {
           if (standard?.isNotEmpty == true) 'standard': standard,
           if (status?.isNotEmpty == true) 'status': status,
           if (cnr?.isNotEmpty == true) 'cnr': cnr,
+          if (telecallerId != null) 'telecaller_id': telecallerId,
         },
       );
       return response.data ?? {};
@@ -139,12 +153,14 @@ class EnquiryService {
     String? query,
     String? standard,
     String? status,
+    int? telecallerId,
   }) => _getPaginatedList(
     '/enquiries/unassigned/',
     page: page,
     query: query,
     standard: standard,
     status: status,
+    telecallerId: telecallerId,
   );
 
   Future<dynamic> getAssignedEnquiries({
@@ -152,12 +168,14 @@ class EnquiryService {
     String? query,
     String? standard,
     String? status,
+    int? telecallerId,
   }) => _getPaginatedList(
     '/enquiries/assigned/',
     page: page,
     query: query,
     standard: standard,
     status: status,
+    telecallerId: telecallerId,
   );
 
   Future<dynamic> getTelecallerEnquiries({
@@ -173,16 +191,37 @@ class EnquiryService {
     cnr: cnr,
   );
 
+  Future<dynamic> getAllEnquiries({
+    int page = 1,
+    String? status,
+    String? search,
+    String? standard,
+    String? cnr,
+  }) => _getPaginatedList(
+    '/enquiries/',
+    page: page,
+    status: status,
+    query: search,
+    standard: standard,
+    cnr: cnr,
+  );
+
   Future<Map<String, dynamic>> getStatusCounts({
     String? search,
+    String? standard,
     String? status,
+    String? cnr,
+    int? telecallerId,
   }) async {
     try {
       final response = await _dio.get(
         '/enquiries/status_counts/',
         queryParameters: {
           if (search?.isNotEmpty == true) 'search': search,
+          if (standard?.isNotEmpty == true) 'standard': standard,
           if (status?.isNotEmpty == true) 'status': status,
+          if (cnr?.isNotEmpty == true) 'cnr': cnr,
+          if (telecallerId != null) 'telecaller_id': telecallerId,
         },
       );
       return response.data ?? {};
@@ -204,25 +243,10 @@ class EnquiryService {
     }
   }
 
-  Future<void> _ensureStoragePermission() async {
-    // On Android 10+ (API 29+), prefer SAF-based flows (no broad storage).
-    if (!Platform.isAndroid) return;
 
-    final androidInfo = await DeviceInfoPlugin().androidInfo;
-    final sdkInt = androidInfo.version.sdkInt;
-
-    if (sdkInt <= 28) {
-      final status = await Permission.storage.request();
-      if (!status.isGranted) {
-        throw Exception('Storage permission denied');
-      }
-    }
-    // For API 29+, SAF/file picker handles per-file access without extra permission.
-  }
 
   Future<String> downloadEnquiryTemplate() async {
     try {
-      await _ensureStoragePermission();
 
       final response = await _dio.get(
         '/enquiries/template/',
@@ -279,11 +303,23 @@ class EnquiryService {
     }
   }
 
-  Future<List<dynamic>> getRecentEnquiries({int limit = 10}) async {
+  Future<List<dynamic>> getRecentEnquiries({
+    int limit = 10,
+    String? search,
+    String? standard,
+    String? status,
+    String? cnr,
+  }) async {
     try {
       final response = await _dio.get(
         '/enquiries/recent/',
-        queryParameters: {'limit': limit.toString()},
+        queryParameters: {
+          'limit': limit.toString(),
+          if (search?.isNotEmpty == true) 'search': search,
+          if (standard?.isNotEmpty == true) 'standard': standard,
+          if (status?.isNotEmpty == true) 'status': status,
+          if (cnr?.isNotEmpty == true) 'cnr': cnr,
+        },
       );
       return response.data ?? [];
     } catch (e) {
@@ -423,11 +459,13 @@ class EnquiryService {
   Future<Map<String, dynamic>> getEnquiryStatusSummary({
     String? standard,
     String? status,
+    int? telecallerId,
   }) async {
     try {
       final params = <String, dynamic>{};
       if (standard?.isNotEmpty == true) params['standard'] = standard;
       if (status?.isNotEmpty == true) params['status'] = status;
+      if (telecallerId != null) params['telecaller_id'] = telecallerId;
 
       final response = await _dio.get(
         '/enquiries/status_summary/',
@@ -448,11 +486,149 @@ class EnquiryService {
     }
   }
 
+  /// Get accurate assigned/unassigned counts for Admin Dashboard
+  /// Supports filtering by standard, status, and telecaller
+  Future<Map<String, dynamic>> getAssignedUnassignedCounts({
+    String? standard,
+    String? status,
+    int? telecallerId,
+  }) async {
+    try {
+      final params = <String, dynamic>{};
+      if (standard?.isNotEmpty == true) params['standard'] = standard;
+      if (status?.isNotEmpty == true) params['status'] = status;
+      if (telecallerId != null) params['telecaller_id'] = telecallerId;
+
+      final response = await _dio.get(
+        '/enquiries/assigned_unassigned_counts/',
+        queryParameters: params,
+      );
+      final data = response.data;
+      logger.d('Assigned/Unassigned Counts: $data');
+
+      if (data is Map<String, dynamic>) {
+        return {
+          'assigned_count': data['assigned_count'] ?? 0,
+          'unassigned_count': data['unassigned_count'] ?? 0,
+          'total_count': data['total_count'] ?? 0,
+        };
+      }
+
+      return {
+        'assigned_count': 0,
+        'unassigned_count': 0,
+        'total_count': 0,
+      };
+    } catch (e) {
+      _rethrow(e);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // MANAGER DASHBOARD
+  // ---------------------------------------------------------------------------
+
+  Future<List<Map<String, dynamic>>> getManagerEnquiries({
+    int page = 1,
+    String? standard,
+    String? status,
+    String? search,
+  }) async {
+    try {
+      final params = <String, dynamic>{
+        'page': page,
+      };
+      if (standard?.isNotEmpty == true) params['standard'] = standard;
+      if (status?.isNotEmpty == true) params['status'] = status;
+      if (search?.isNotEmpty == true) params['search'] = search;
+
+      final response = await _dio.get(
+        '/enquiries/manager_enquiries/',
+        queryParameters: params,
+      );
+
+      final data = response.data;
+      logger.d('Manager enquiries response: $data');
+
+      if (data is Map<String, dynamic> && data['results'] != null) {
+        return List<Map<String, dynamic>>.from(data['results'] ?? []);
+      }
+      if (data is List) {
+        return List<Map<String, dynamic>>.from(data);
+      }
+
+      return [];
+    } catch (e) {
+      _rethrow(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> getManagerStatusCounts({
+    String? standard,
+  }) async {
+    try {
+      final params = <String, dynamic>{};
+      if (standard?.isNotEmpty == true) params['standard'] = standard;
+
+      final response = await _dio.get(
+        '/enquiries/manager_status_summary/',
+        queryParameters: params,
+      );
+
+      final data = response.data;
+      logger.d('Manager status counts: $data');
+
+      if (data is Map<String, dynamic> && data['status_counts'] != null) {
+        final statusCounts = <String, int>{};
+        for (final item in data['status_counts']) {
+          if (item is Map<String, dynamic>) {
+            statusCounts[item['status']] = item['count'] ?? 0;
+          }
+        }
+        return statusCounts;
+      }
+
+      return {};
+    } catch (e) {
+      _rethrow(e);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getManagerStatusSummary({
+    String? standard,
+    String? status,
+  }) async {
+    try {
+      final params = <String, dynamic>{};
+      if (standard?.isNotEmpty == true) params['standard'] = standard;
+      if (status?.isNotEmpty == true) params['status'] = status;
+
+      final response = await _dio.get(
+        '/enquiries/manager_status_summary/',
+        queryParameters: params,
+      );
+
+      final data = response.data;
+      logger.d('Manager status summary: $data');
+
+      if (data is Map<String, dynamic> && data['status_counts'] != null) {
+        return List<Map<String, dynamic>>.from(data['status_counts'] ?? []);
+      }
+
+      return [];
+    } catch (e) {
+      _rethrow(e);
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // BULK UPLOAD
   // ---------------------------------------------------------------------------
 
-  Future<Map<String, dynamic>> bulkUploadEnquiries(String filePath) async {
+  Future<Map<String, dynamic>> bulkUploadEnquiries(
+    String filePath, {
+    int? telecallerId,
+  }) async {
     try {
       final file = File(filePath);
       if (!file.existsSync()) {
@@ -464,6 +640,7 @@ class EnquiryService {
           filePath,
           filename: file.path.split('/').last,
         ),
+        if (telecallerId != null) 'telecaller_id': telecallerId,
       });
 
       final response = await _dio.post(
@@ -471,6 +648,22 @@ class EnquiryService {
         data: formData,
       );
       return response.data ?? {};
+    } catch (e) {
+      _rethrow(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> getUploadProgress(String sessionId) async {
+    try {
+      final response = await _dio.get(
+        '/enquiries/upload-progress/$sessionId/',
+      );
+      return response.data ?? {
+        'current': 0,
+        'total': 0,
+        'status': 'not_found',
+        'percentage': 0,
+      };
     } catch (e) {
       _rethrow(e);
     }
@@ -531,6 +724,17 @@ class EnquiryService {
         data: payload,
       );
       return response.data ?? {};
+    } catch (e) {
+      _rethrow(e);
+    }
+  }
+
+  /// Fetch all available enquiry statuses from backend
+  Future<List<dynamic>> getStatusesList() async {
+    try {
+      final response = await _dio.get('/statuses/');
+      final List<dynamic> results = response.data is List ? response.data : [];
+      return results;
     } catch (e) {
       _rethrow(e);
     }
