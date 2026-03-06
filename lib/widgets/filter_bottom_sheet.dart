@@ -181,11 +181,14 @@ class _EnquiryFilterBottomSheetState extends State<EnquiryFilterBottomSheet> {
                   final status = entry.key;
                   final count = entry.value;
                   final selected = _selectedStatuses.contains(status);
+                  final displayStatus = status.isNotEmpty 
+                      ? '${status[0].toUpperCase()}${status.substring(1)}'
+                      : 'Unknown';
 
                   return ChoiceChip(
                     showCheckmark: false,
                     label: Text(
-                      '${status[0].toUpperCase()}${status.substring(1)} ($count)',
+                      '$displayStatus ($count)',
                       style: TextStyle(
                         color: selected ? cs.onPrimary : cs.onSurfaceVariant,
                       ),

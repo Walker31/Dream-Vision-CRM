@@ -18,8 +18,12 @@ class TelecallerDashboard extends StatefulWidget {
 
 class _TelecallerDashboardState extends State<TelecallerDashboard> {
   final EnquiryService _enquiryService = EnquiryService();
-  final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
+  final PageStorageBucket _pageStorageBucket = PageStorageBucket();
+  static const PageStorageKey<String> _allLeadsScrollKey =
+      PageStorageKey<String>('telecaller_all_leads_scroll');
+  static const PageStorageKey<String> _callsScrollKey =
+      PageStorageKey<String>('telecaller_calls_scroll');
   Logger logger = Logger();
 
   List<Enquiry> _enquiries = [];
@@ -38,21 +42,27 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
   // Removed hardcoded _statusOptions - now fetched from API via statusNamesProvider
   final Set<String> _selectedStatuses = {};
 
+  // Calls Tab State
+  DateTime _selectedDate = DateTime.now();
+  List<dynamic> _dailyCalls = [];
+  bool _isLoadingCalls = false;
+  String? _callsError;
+  int _callsCurrentPage = 1;
+  bool _callsHasNextPage = false;
+
   @override
   void initState() {
     super.initState();
     _fetchAllStatuses();
     _fetchEnquiries(page: 1);
     _fetchStatusCounts();
-    _scrollController.addListener(_onScroll);
+    _fetchCalls(date: _selectedDate, page: 1);
     _searchController.addListener(_onSearchChanged);
   }
 
   @override
   void dispose() {
-    _scrollController.removeListener(_onScroll);
     _searchController.removeListener(_onSearchChanged);
-    _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -63,13 +73,24 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
     _fetchStatusCounts();
   }
 
-  void _onScroll() {
-    if (_scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent - 200 &&
+  bool _onLeadsScrollNotification(ScrollNotification notification) {
+    if (notification.metrics.pixels >=
+            notification.metrics.maxScrollExtent - 200 &&
         _hasNextPage &&
         !_isLoadingMore) {
       _fetchEnquiries(page: _currentPage + 1);
     }
+    return false;
+  }
+
+  bool _onCallsScrollNotification(ScrollNotification notification) {
+    if (notification.metrics.pixels >=
+            notification.metrics.maxScrollExtent - 200 &&
+        _callsHasNextPage &&
+        !_isLoadingCalls) {
+      _fetchCalls(date: _selectedDate, page: _callsCurrentPage + 1);
+    }
+    return false;
   }
 
   Future<void> _fetchEnquiries({int page = 1}) async {
@@ -172,8 +193,54 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
     }
   }
 
+  Future<void> _fetchCalls({required DateTime date, int page = 1}) async {
+    if (page == 1) {
+      setState(() {
+        _isLoadingCalls = true;
+        _callsError = null;
+        _dailyCalls = [];
+        _callsHasNextPage = false;
+      });
+    } else {
+      setState(() {
+        _isLoadingCalls = true;
+      });
+    }
+
+    try {
+      final response = await _enquiryService.getFollowUpsByDate(
+        date,
+        page: page,
+        search: _searchQuery.isNotEmpty ? _searchQuery : null,
+      );
+      final results = response['results'] as List<dynamic>? ?? [];
+      final hasNext = response['hasNext'] as bool? ?? false;
+      
+      if (!mounted) return;
+      
+      setState(() {
+        if (page == 1) {
+          _dailyCalls = results;
+        } else {
+          _dailyCalls.addAll(results);
+        }
+        _callsCurrentPage = page;
+        _callsHasNextPage = hasNext;
+        _isLoadingCalls = false;
+      });
+    } catch (e) {
+      logger.e("Failed to fetch daily calls: $e");
+      if (!mounted) return;
+      setState(() {
+        _callsError = ErrorHelper.getUserMessage(e);
+        _isLoadingCalls = false;
+      });
+    }
+  }
+
   Future<void> _refresh() async {
     await _fetchEnquiries(page: 1);
+    await _fetchCalls(date: _selectedDate, page: 1);
   }
 
   void _openFilterSheet() {
@@ -252,11 +319,14 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
                           final status = entry.key;
                           final count = entry.value;
                           final selected = _selectedStatuses.contains(status);
+                          final displayStatus = status.isNotEmpty 
+                              ? '${status[0].toUpperCase()}${status.substring(1)}'
+                              : 'Unknown';
 
                           return ChoiceChip(
                             showCheckmark: false,
                             label: Text(
-                              '${status[0].toUpperCase()}${status.substring(1)} ($count)',
+                              '$displayStatus ($count)',
                               style: TextStyle(
                                 color: selected ? cs.onPrimary : cs.onSurfaceVariant,
                               ),
@@ -358,6 +428,7 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
     try {
       final response = await _enquiryService.getEnquiryStatuses();
       final statuses = (response)
+          .where((s) => s is Map<String, dynamic> && s['name'] != null)
           .map((s) => (s as Map<String, dynamic>)['name'] as String)
           .toList();
       if (mounted) {
@@ -414,13 +485,40 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
     }
   }
 
-  Future<void> _makePhoneCall(String phoneNumber) async {
-    final Uri launchUri = Uri(scheme: 'tel', path: phoneNumber);
-    if (await canLaunchUrl(launchUri)) {
-      await launchUrl(launchUri);
+  String _sanitizePhoneNumber(String phoneNumber) {
+    // Remove all non-numeric characters except leading +
+    String sanitized = phoneNumber.trim();
+    // Keep + only at the start, remove everything else except digits
+    if (sanitized.startsWith('+')) {
+      sanitized = '+${sanitized.replaceAll(RegExp(r'[^0-9]'), '')}';
     } else {
+      sanitized = sanitized.replaceAll(RegExp(r'[^0-9]'), '');
+    }
+    return sanitized;
+  }
+
+  Future<void> _makePhoneCall(String phoneNumber) async {
+    try {
+      final cleanedNumber = _sanitizePhoneNumber(phoneNumber);
+      
+      // Validate that we have at least 10 digits (basic validation)
+      final digitsOnly = cleanedNumber.replaceAll(RegExp(r'[^0-9]'), '');
+      if (digitsOnly.isEmpty || digitsOnly.length < 10) {
+        if (!mounted) return;
+        GlobalErrorHandler.error('Invalid phone number format');
+        return;
+      }
+
+      final Uri launchUri = Uri(scheme: 'tel', path: cleanedNumber);
+      if (await canLaunchUrl(launchUri)) {
+        await launchUrl(launchUri);
+      } else {
+        if (!mounted) return;
+        GlobalErrorHandler.error("Could not open dialer for $cleanedNumber");
+      }
+    } catch (e) {
       if (!mounted) return;
-      GlobalErrorHandler.error("Could not open dialer for $phoneNumber");
+      GlobalErrorHandler.error("Error making call: $e");
     }
   }
 
@@ -445,62 +543,100 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(
-        scrolledUnderElevation: 0,
-        surfaceTintColor: Colors.transparent,
-        backgroundColor: cs.surface,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 16.0),
-          child: Image.asset(
-            'assets/logo.jpeg',
-            width: 40,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: cs.surfaceContainerHighest,
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    'DV',
-                    style: TextStyle(
-                      color: cs.onSurfaceVariant,
-                      fontWeight: FontWeight.bold,
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          scrolledUnderElevation: 0,
+          surfaceTintColor: Colors.transparent,
+          backgroundColor: cs.surface,
+          leading: Padding(
+            padding: const EdgeInsets.only(left: 16.0),
+            child: Image.asset(
+              'assets/logo.jpeg',
+              width: 40,
+              errorBuilder: (context, error, stackTrace) {
+                return Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: cs.surfaceContainerHighest,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      'DV',
+                      style: TextStyle(
+                        color: cs.onSurfaceVariant,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
+          ),
+          title: const Text('Telecalling Dashboard'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.filter_list),
+              onPressed: _openFilterSheet,
+            ),
+            IconButton(
+              icon: const Icon(Icons.settings),
+              onPressed: () => context.push('/settings'),
+            ),
+          ],
+        ),
+        body: NestedScrollView(
+          headerSliverBuilder: (context, innerBoxIsScrolled) => [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 0),
+                child: const TelecallerCallChart(),
+              ),
+            ),
+            SliverToBoxAdapter(child: const SizedBox(height: 16)),
+            SliverAppBar(
+              pinned: true,
+              toolbarHeight: 48,
+              automaticallyImplyLeading: false,
+              backgroundColor: cs.surface,
+              elevation: 0,
+              flexibleSpace: TabBar(
+                tabs: const [
+                  Tab(text: 'All Leads'),
+                  Tab(text: 'Calls'),
+                ],
+                indicatorColor: cs.primary,
+                labelColor: cs.primary,
+                unselectedLabelColor: cs.onSurfaceVariant,
+              ),
+            ),
+          ],
+          body: PageStorage(
+            bucket: _pageStorageBucket,
+            child: TabBarView(
+              children: [
+                RefreshIndicator(onRefresh: _refresh, child: _buildBody()),
+                _buildCallsTab(),
+              ],
+            ),
           ),
         ),
-        title: const Text('Telecalling Dashboard'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.filter_list),
-            onPressed: _openFilterSheet,
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => context.push('/settings'),
-          ),
-        ],
-      ),
-      body: RefreshIndicator(onRefresh: _refresh, child: _buildBody()),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: cs.primary,
-        foregroundColor: cs.onPrimary,
-        shape: const CircleBorder(),
-        child: const Icon(Icons.add),
-        onPressed: () async {
-          final result = await context.push('/add-enquiry');
-          if (result == true && mounted) {
-            _refresh();
-            _fetchStatusCounts();
-          }
-        },
+        floatingActionButton: FloatingActionButton(
+          backgroundColor: cs.primary,
+          foregroundColor: cs.onPrimary,
+          shape: const CircleBorder(),
+          child: const Icon(Icons.add),
+          onPressed: () async {
+            final result = await context.push('/add-enquiry');
+            if (result == true && mounted) {
+              _refresh();
+              _fetchStatusCounts();
+            }
+          },
+        ),
       ),
     );
   }
@@ -535,71 +671,72 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
       );
     }
 
-    return SingleChildScrollView(
-      controller: _scrollController,
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const TelecallerCallChart(),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'Search by name, phone, email...',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() => _searchQuery = '');
-                              _refresh();
-                            },
-                          )
-                        : null,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    filled: true,
-                    fillColor: cs.surfaceContainerHighest.withValues(
-                      alpha: 0.5,
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
+    return NotificationListener<ScrollNotification>(
+      onNotification: _onLeadsScrollNotification,
+      child: SingleChildScrollView(
+        key: _allLeadsScrollKey,
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search by name, phone, email...',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                                _refresh();
+                              },
+                            )
+                          : null,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: cs.surfaceContainerHighest.withValues(
+                        alpha: 0.5,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Assigned Leads',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              Text(
-                'Total: $_totalCount',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: cs.onSurfaceVariant,
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Assigned Leads',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _buildLeadsList(),
-        ],
+                Text(
+                  'Total: $_totalCount',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildLeadsList(),
+          ],
+        ),
       ),
     );
   }
@@ -630,15 +767,23 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
     late Color textColor;
     late String label;
     late IconData icon;
+    String timeString = DateFormat.jm().format(targetDate); // Default is time
 
     // Skip overdue display for final statuses (Confirmed or Closed = enquiry complete)
-    final isFinalStatus = status.isNotEmpty && 
-        (status.toLowerCase() == 'confirmed' || status.toLowerCase() == 'closed');
+    final cleanStatus = status.trim().toLowerCase();
+    final isFinalStatus = cleanStatus == 'confirmed' || cleanStatus == 'closed' || cleanStatus == 'admission confirmed';
+    
     if (targetDate.isBefore(now) && !isFinalStatus) {
       bgColor = cs.errorContainer;
       textColor = cs.error;
       label = "Overdue";
       icon = Icons.warning_amber_rounded;
+      
+      // If overdue by 1 day or more, show the date instead of the time
+      final difference = today.difference(targetDay).inDays;
+      if (difference >= 1) {
+        timeString = DateFormat('MMM d').format(targetDate);
+      }
     } else if (targetDay == today) {
       bgColor = cs.tertiaryContainer;
       textColor = cs.tertiary;
@@ -655,8 +800,6 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
       label = DateFormat('MMM d').format(targetDate);
       icon = Icons.calendar_month_rounded;
     }
-
-    final timeString = DateFormat.jm().format(targetDate);
 
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 300),
@@ -762,7 +905,9 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
                       )
                     : const SizedBox.shrink();
               }
-
+              if (index < 0 || index >= _enquiries.length) {
+                return const SizedBox.shrink();
+              }
               final enquiry = _enquiries[index];
               final fullName = '${enquiry.firstName} ${enquiry.lastName ?? ''}'
                   .trim();
@@ -906,6 +1051,201 @@ class _TelecallerDashboardState extends State<TelecallerDashboard> {
               );
             },
           ),
+      ],
+    );
+  }
+
+  Widget _buildCallsTab() {
+    final cs = Theme.of(context).colorScheme;
+
+    return Column(
+      children: [
+        // Date Picker Header
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          color: cs.surfaceContainerHighest.withValues(alpha: 0.3),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Calls on: ${DateFormat('dd MMM yyyy').format(_selectedDate)}',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: _selectedDate,
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime.now().add(const Duration(days: 365)),
+                  );
+                  if (picked != null && picked != _selectedDate) {
+                    setState(() {
+                      _selectedDate = picked;
+                    });
+                    _fetchCalls(date: picked, page: 1);
+                  }
+                },
+                icon: const Icon(Icons.calendar_month, size: 18),
+                label: const Text('Change'),
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Calls List
+        Expanded(
+          child: _isLoadingCalls && _callsCurrentPage == 1
+              ? const Center(child: CircularProgressIndicator())
+              : _callsError != null
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.error_outline, size: 48, color: cs.error),
+                          const SizedBox(height: 16),
+                          Text(_callsError!),
+                          const SizedBox(height: 16),
+                          FilledButton(
+                            onPressed: () => _fetchCalls(date: _selectedDate, page: 1),
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    )
+                  : _dailyCalls.isEmpty
+                      ? const Center(
+                          child: Text('No calls recorded for this date.'),
+                        )
+                      : NotificationListener<ScrollNotification>(
+                          onNotification: _onCallsScrollNotification,
+                          child: ListView.builder(
+                            key: _callsScrollKey,
+                            padding: const EdgeInsets.all(16),
+                            itemCount: _dailyCalls.length + (_callsHasNextPage ? 1 : 0),
+                            itemBuilder: (context, index) {
+                            if (index == _dailyCalls.length) {
+                              return Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(cs.primary),
+                                  ),
+                                ),
+                              );
+                            }
+
+                            final call = _dailyCalls[index];
+                            final enquiryName = call['enquiry_name'] ?? 'Unknown Lead';
+                            final remarks = call['remarks'] ?? 'No remarks';
+                            final time = DateTime.tryParse(call['timestamp'] ?? '')?.toLocal();
+                            final timeFormatted = time != null ? DateFormat('hh:mm a').format(time) : '';
+                            
+                            final statusBefore = call['status_before_follow_up_name'];
+                            final statusAfter = call['status_after_follow_up_name'];
+                            final nextFollowUpDate = call['next_follow_up_date'];
+                            
+                            String statusStr = statusAfter ?? 'Unknown';
+                            if (statusBefore != null && statusAfter != null && statusBefore != statusAfter) {
+                              statusStr = '$statusBefore ➔ $statusAfter';
+                            }
+                            
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              elevation: 0,
+                              color: cs.surfaceContainerLow,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                side: BorderSide(
+                                  color: cs.outlineVariant.withValues(alpha: 0.4),
+                                ),
+                              ),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: () {
+                                  if (call['enquiry'] != null) {
+                                    context.push('/enquiry/${call['enquiry']}');
+                                  }
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            enquiryName,
+                                            style: const TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                        Text(
+                                          timeFormatted,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: cs.secondary,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: cs.secondaryContainer,
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            statusStr,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: cs.onSecondaryContainer,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ),
+                                        const Spacer(),
+                                        if (nextFollowUpDate != null)
+                                          _buildNextFollowUpBadge(
+                                            context,
+                                            nextFollowUpDate,
+                                            statusAfter ?? '',
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      remarks,
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: cs.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                            },
+                          ),
+                        ),
+        ),
       ],
     );
   }

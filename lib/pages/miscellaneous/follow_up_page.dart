@@ -48,6 +48,10 @@ class _FollowUpPageState extends State<FollowUpPage> {
     });
   }
 
+  Future<void> _refresh() async {
+    setState(() => _loadFollowUps());
+  }
+
   Future<void> _openEditor(FollowUp followUp) async {
     try {
       final enquiryData = await _service.getEnquiryById(widget.enquiryId);
@@ -83,9 +87,11 @@ class _FollowUpPageState extends State<FollowUpPage> {
         leading: const BackButtonIos(),
         title: const Text('Follow-up History'),
       ),
-      body: FutureBuilder<List<FollowUp>>(
-        future: _followUps,
-        builder: (context, snapshot) {
+      body: RefreshIndicator(
+        onRefresh: _refresh,
+        child: FutureBuilder<List<FollowUp>>(
+          future: _followUps,
+          builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
@@ -126,6 +132,7 @@ class _FollowUpPageState extends State<FollowUpPage> {
             },
           );
         },
+        ),
       ),
     );
   }

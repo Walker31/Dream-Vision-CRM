@@ -424,6 +424,10 @@ class _ManagerDashboardState extends State<ManagerDashboard> {
                         );
                       }
 
+                      if (index < 0 || index >= _allEnquiries.length) {
+                        return const SizedBox.shrink();
+                      }
+
                       return _buildEnquiryCard(_allEnquiries[index]);
                     },
                     childCount: _allEnquiries.length + (_isLoadingMore ? 1 : 0),

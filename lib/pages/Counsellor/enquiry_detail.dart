@@ -189,9 +189,32 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
     );
   }
 
+  String _sanitizePhoneNumber(String phoneNumber) {
+    // Remove all non-numeric characters except leading +
+    String sanitized = phoneNumber.trim();
+    // Keep + only at the start, remove everything else except digits
+    if (sanitized.startsWith('+')) {
+      sanitized = '+${sanitized.replaceAll(RegExp(r'[^0-9]'), '')}';
+    } else {
+      sanitized = sanitized.replaceAll(RegExp(r'[^0-9]'), '');
+    }
+    return sanitized;
+  }
+
   Future<void> _makeCall(String phoneNumber) async {
     try {
-      final uri = Uri.parse('tel:$phoneNumber');
+      final cleanedNumber = _sanitizePhoneNumber(phoneNumber);
+      
+      // Validate that we have at least 10 digits (basic validation)
+      final digitsOnly = cleanedNumber.replaceAll(RegExp(r'[^0-9]'), '');
+      if (digitsOnly.isEmpty || digitsOnly.length < 10) {
+        if (mounted) {
+          GlobalErrorHandler.error('Invalid phone number format');
+        }
+        return;
+      }
+
+      final uri = Uri.parse('tel:$cleanedNumber');
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
       } else {
@@ -345,8 +368,14 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
                       label: 'Make Call',
                       labelStyle: const TextStyle(fontSize: 14),
                       onTap: () {
-                        final phone = enquiry.phoneNumber;
-                        if (phone != null && phone.isNotEmpty) {
+                        // Try father's phone first, then student's, then show error
+                        final phone = (enquiry.fatherPhoneNumber != null && enquiry.fatherPhoneNumber!.isNotEmpty)
+                            ? enquiry.fatherPhoneNumber!
+                            : (enquiry.phoneNumber != null && enquiry.phoneNumber!.isNotEmpty)
+                                ? enquiry.phoneNumber!
+                                : null;
+                        
+                        if (phone != null) {
                           _makeCall(phone);
                         } else {
                           GlobalErrorHandler.error('No phone number available');
@@ -616,7 +645,10 @@ class _EnquiryDetailPageState extends State<EnquiryDetailPage> {
   }) {
     final cs = Theme.of(context).colorScheme;
     return ListTile(
-      leading: Icon(icon, color: cs.primary),
+      leading: GestureDetector(
+        onTap: () => _makeCall(value),
+        child: Icon(icon, color: cs.primary),
+      ),
       title: Text(value, style: TextStyle(color: cs.onSurface)),
       subtitle: Text(label, style: TextStyle(color: cs.onSurfaceVariant)),
       dense: true,

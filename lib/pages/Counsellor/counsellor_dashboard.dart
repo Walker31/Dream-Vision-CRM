@@ -520,7 +520,9 @@ class _CounsellorDashboardState extends State<CounsellorDashboard> {
             child: Center(child: CircularProgressIndicator()),
           );
         }
-
+        if (index < 0 || index >= _allEnquiries.length) {
+          return const SizedBox.shrink();
+        }
         final enquiry = _allEnquiries[index];
         final status = enquiry.currentStatusName ?? 'Unknown';
         final fullName = [

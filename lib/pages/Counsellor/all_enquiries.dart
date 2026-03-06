@@ -251,6 +251,9 @@ class _AllEnquiriesPageState extends State<AllEnquiriesPage> {
               child: Center(child: CircularProgressIndicator()),
             );
           }
+          if (index < 0 || index >= _enquiries.length) {
+            return const SizedBox.shrink();
+          }
           return _EnquiryListItem(
             enquiry: _enquiries[index],
             onRefresh: _refresh,

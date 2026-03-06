@@ -22,7 +22,8 @@ class FollowUp {
 
   final String? statusBeforeFollowUpName;
   final String? statusAfterFollowUpName; // backend gives only name
-
+  final String? enquiryName; // Added for Calls tab
+  
   /// shim for UI compatibility: f.statusAfterFollowUp
   String? get statusAfterFollowUp => statusAfterFollowUpName;
 
@@ -40,6 +41,7 @@ class FollowUp {
     required this.remarks,
     this.statusBeforeFollowUpName,
     this.statusAfterFollowUpName,
+    this.enquiryName,
     this.nextFollowUpDate,
     required this.timestamp,
     this.user,
@@ -70,6 +72,7 @@ class FollowUp {
           : 'No remarks provided.',
       statusBeforeFollowUpName: json['status_before_follow_up_name'],
       statusAfterFollowUpName: json['status_after_follow_up_name'],
+      enquiryName: json['enquiry_name'],
       nextFollowUpDate: json['next_follow_up_date'],
 
       timestamp: DateTime.tryParse(json['timestamp'] ?? '') ?? DateTime.now(),

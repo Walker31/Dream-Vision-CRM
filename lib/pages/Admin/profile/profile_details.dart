@@ -60,94 +60,96 @@ class _EmployeeDetailsPageState extends State<EmployeeDetailsPage> {
         ),
       ),
 
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            _buildProfileHeader(
-              context: context,
-              name: user.fullName,
-              email: user.email,
-              staffId: user.staffId,
-              profilePictureUrl: user.profilePicture,
-            ),
-            const SizedBox(height: 20),
+      body: RefreshIndicator(
+        onRefresh: () => authProvider.refreshProfile(),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              _buildProfileHeader(
+                context: context,
+                name: user.fullName,
+                email: user.email,
+                staffId: user.staffId,
+                profilePictureUrl: user.profilePicture,
+              ),
+              const SizedBox(height: 20),
 
-            _buildDetailCard(
-              context,
-              icon: Icons.person_outline,
-              title: 'Personal Information',
-              details: [
-                _buildDetailRow(
-                  context,
-                  Icons.badge_outlined,
-                  'Staff ID',
-                  user.staffId,
-                ),
-                _buildDetailRow(
-                  context,
-                  Icons.person,
-                  'First Name',
-                  user.firstName,
-                ),
-                _buildDetailRow(
-                  context,
-                  Icons.person_outline,
-                  'Last Name',
-                  user.lastName,
-                ),
-                _buildDetailRow(
-                  context,
-                  Icons.email_outlined,
-                  'Email',
-                  user.email,
-                ),
-                _buildDetailRow(
-                  context,
-                  Icons.phone_outlined,
-                  'Phone Number',
-                  user.phoneNumber.isNotEmpty ? user.phoneNumber : 'N/A',
-                ),
-                _buildDetailRow(
-                  context,
-                  Icons.location_on_outlined,
-                  'Address',
-                  user.address.isNotEmpty ? user.address : 'N/A',
-                ),
-              ],
-            ),
+              _buildDetailCard(
+                context,
+                icon: Icons.person_outline,
+                title: 'Personal Information',
+                details: [
+                  _buildDetailRow(
+                    context,
+                    Icons.badge_outlined,
+                    'Staff ID',
+                    user.staffId,
+                  ),
+                  _buildDetailRow(
+                    context,
+                    Icons.person,
+                    'First Name',
+                    user.firstName,
+                  ),
+                  _buildDetailRow(
+                    context,
+                    Icons.person_outline,
+                    'Last Name',
+                    user.lastName,
+                  ),
+                  _buildDetailRow(
+                    context,
+                    Icons.email_outlined,
+                    'Email',
+                    user.email,
+                  ),
+                  _buildDetailRow(
+                    context,
+                    Icons.phone_outlined,
+                    'Phone Number',
+                    user.phoneNumber.isNotEmpty ? user.phoneNumber : 'N/A',
+                  ),
+                  _buildDetailRow(
+                    context,
+                    Icons.location_on_outlined,
+                    'Address',
+                    user.address.isNotEmpty ? user.address : 'N/A',
+                  ),
+                ],
+              ),
 
-            _buildDetailCard(
-              context,
-              icon: Icons.work_outline,
-              title: 'Work Information',
-              details: [
-                _buildDetailRow(
-                  context,
-                  Icons.person_pin_outlined,
-                  'Username',
-                  user.username,
-                ),
-                _buildDetailRow(
-                  context,
-                  Icons.lock_outline,
-                  'Password',
-                  '••••••••',
-                ),
-              ],
-            ),
+              _buildDetailCard(
+                context,
+                icon: Icons.work_outline,
+                title: 'Work Information',
+                details: [
+                  _buildDetailRow(
+                    context,
+                    Icons.person_pin_outlined,
+                    'Username',
+                    user.username,
+                  ),
+                  _buildDetailRow(
+                    context,
+                    Icons.lock_outline,
+                    'Password',
+                    '••••••••',
+                  ),
+                ],
+              ),
 
-            _buildDetailCard(
-              context,
-              icon: Icons.verified_user_outlined,
-              title: 'Employment Status',
-              details: [
-                _buildDetailRow(
-                  context,
-                  Icons.calendar_today_outlined,
-                  'Date of Joining',
-                  _formatDate(user.dateOfJoining),
-                ),
+              _buildDetailCard(
+                context,
+                icon: Icons.verified_user_outlined,
+                title: 'Employment Status',
+                details: [
+                  _buildDetailRow(
+                    context,
+                    Icons.calendar_today_outlined,
+                    'Date of Joining',
+                    _formatDate(user.dateOfJoining),
+                  ),
                 _buildDetailRow(
                   context,
                   Icons.circle,
@@ -172,6 +174,7 @@ class _EmployeeDetailsPageState extends State<EmployeeDetailsPage> {
               ],
             ),
           ],
+        ),
         ),
       ),
     );

@@ -281,7 +281,10 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet>
                           "${widget.enquiry.firstName} ${widget.enquiry.lastName}"
                               .trim(),
                         ),
-                        _info("Mobile No.", widget.enquiry.phoneNumber ?? '-'),
+                        if (widget.enquiry.phoneNumber != null && widget.enquiry.phoneNumber!.isNotEmpty)
+                          _info("Mobile No.", widget.enquiry.phoneNumber!),
+                        if (widget.enquiry.fatherPhoneNumber != null && widget.enquiry.fatherPhoneNumber!.isNotEmpty)
+                          _info("Father's No.", widget.enquiry.fatherPhoneNumber!),
                         const SizedBox(height: 10),
                         _section("Follow-up Details"),
                         _cnrToggle(),
@@ -342,18 +345,32 @@ class _AddFollowUpSheetState extends State<AddFollowUpSheet>
         const SizedBox(height: 12),
         CustomFilterChipGroup(
           title: "Exam",
-          options: _exams.map((e) => e['name'] as String).toList(),
+          options: _exams
+              .whereType<Map<String, dynamic>>()
+              .where((e) => e['name'] != null)
+              .map((e) => e['name'] as String)
+              .toList(),
           selectedValues: _exams
+              .whereType<Map<String, dynamic>>()
               .where((e) => _selectedExamIds.contains(e['id']))
+              .where((e) => e['name'] != null)
               .map((e) => e['name'] as String)
               .toSet(),
           onChanged: (examName, selected) {
             setState(() {
-              final exam = _exams.firstWhere((e) => e['name'] == examName);
-              if (selected) {
-                _selectedExamIds.add(exam['id'] as int);
-              } else {
-                _selectedExamIds.remove(exam['id'] as int);
+              final exam = _exams
+                  .whereType<Map<String, dynamic>>()
+                  .firstWhere(
+                    (e) => e['name'] == examName,
+                    orElse: () => {},
+                  );
+              if (exam.isNotEmpty) {
+                final examId = exam['id'] as int;
+                if (selected) {
+                  _selectedExamIds.add(examId);
+                } else {
+                  _selectedExamIds.remove(examId);
+                }
               }
             });
           },

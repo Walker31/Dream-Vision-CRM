@@ -67,6 +67,26 @@ class EnquiryService {
   // ERROR HANDLING (SERVICE-ONLY)
   // ---------------------------------------------------------------------------
 
+  String _stringifyErrorValue(dynamic value) {
+    if (value == null) return '';
+    if (value is String) return value;
+    if (value is List) {
+      if (value.isEmpty) return '';
+      return _stringifyErrorValue(value.first);
+    }
+    if (value is Map) {
+      if (value['detail'] != null) return _stringifyErrorValue(value['detail']);
+      if (value['message'] != null) return _stringifyErrorValue(value['message']);
+      if (value['error'] != null) return _stringifyErrorValue(value['error']);
+      if (value.isNotEmpty) {
+        final firstValue = value.values.first;
+        return _stringifyErrorValue(firstValue);
+      }
+      return '';
+    }
+    return value.toString();
+  }
+
   String _handleDioError(DioException e) {
     if (e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.sendTimeout ||
@@ -87,15 +107,25 @@ class EnquiryService {
       }
 
       if (data is Map) {
-        if (data['detail'] != null) return data['detail'].toString();
-        if (data['message'] != null) return data['message'].toString();
-        if (data['error'] != null) return data['error'].toString();
+        if (data['detail'] != null) {
+          final msg = _stringifyErrorValue(data['detail']);
+          if (msg.isNotEmpty) return msg;
+        }
+        if (data['message'] != null) {
+          final msg = _stringifyErrorValue(data['message']);
+          if (msg.isNotEmpty) return msg;
+        }
+        if (data['error'] != null) {
+          final msg = _stringifyErrorValue(data['error']);
+          if (msg.isNotEmpty) return msg;
+        }
 
         if (data.isNotEmpty) {
           final key = data.keys.first;
           final value = data[key];
-          if (value is List) return "$key: ${value.first}";
-          return "$key: $value";
+          final message = _stringifyErrorValue(value);
+          if (message.isNotEmpty) return "$key: $message";
+          return key.toString();
         }
       }
 
@@ -362,6 +392,40 @@ class EnquiryService {
     }
   }
 
+  Future<Map<String, dynamic>> getFollowUpsByDate(DateTime date, {int page = 1, String? search}) async {
+    try {
+      final formattedDate = "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+      
+      final Map<String, dynamic> queryParams = {
+        'date': formattedDate,
+        'page': page,
+      };
+      
+      if (search != null && search.isNotEmpty) {
+        queryParams['search'] = search;
+      }
+
+      final response = await _dio.get(
+        '/follow-ups/',
+        queryParameters: queryParams,
+      );
+
+      final body = response.data;
+      if (body is Map && body['results'] != null) {
+        return {
+          'results': body['results'],
+          'hasNext': body['next'] != null,
+        };
+      }
+      if (body is List) {
+        return {'results': body, 'hasNext': false};
+      }
+      return {'results': [], 'hasNext': false};
+    } catch (e) {
+      _rethrow(e);
+    }
+  }
+
   Future<Map<String, dynamic>> addFollowUp(Map<String, dynamic> data) async {
     try {
       final response = await _dio.post('/follow-ups/', data: data);
@@ -414,16 +478,33 @@ class EnquiryService {
   Future<List<dynamic>> getSchools() async {
     try {
       final response = await _dio.get('/schools/');
-      return response.data ?? [];
+      return _extractListFromResponse(response.data);
     } catch (e) {
       _rethrow(e);
     }
   }
 
+  // Helper method to extract list from paginated or non-paginated response
+  List<dynamic> _extractListFromResponse(dynamic responseData) {
+    if (responseData == null) return [];
+    
+    // If response is already a list, return it directly
+    if (responseData is List) return responseData;
+    
+    // If response is a Map (paginated format), extract 'results'
+    if (responseData is Map<String, dynamic>) {
+      final results = responseData['results'];
+      if (results is List) return results;
+    }
+    
+    // Fallback to empty list
+    return [];
+  }
+
   Future<List<dynamic>> getEnquiryStatuses() async {
     try {
       final response = await _dio.get('/statuses/');
-      return response.data ?? [];
+      return _extractListFromResponse(response.data);
     } catch (e) {
       _rethrow(e);
     }
@@ -432,7 +513,7 @@ class EnquiryService {
   Future<List<dynamic>> getEnquirySources() async {
     try {
       final response = await _dio.get('/sources/');
-      return response.data ?? [];
+      return _extractListFromResponse(response.data);
     } catch (e) {
       _rethrow(e);
     }
@@ -441,7 +522,7 @@ class EnquiryService {
   Future<List<dynamic>> getExams() async {
     try {
       final response = await _dio.get('/exams/');
-      return response.data ?? [];
+      return _extractListFromResponse(response.data);
     } catch (e) {
       _rethrow(e);
     }
@@ -733,8 +814,7 @@ class EnquiryService {
   Future<List<dynamic>> getStatusesList() async {
     try {
       final response = await _dio.get('/statuses/');
-      final List<dynamic> results = response.data is List ? response.data : [];
-      return results;
+      return _extractListFromResponse(response.data);
     } catch (e) {
       _rethrow(e);
     }

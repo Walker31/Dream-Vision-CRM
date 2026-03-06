@@ -2,6 +2,7 @@
 
 import 'package:dreamvision/models/enquiry_model.dart';
 import 'package:dreamvision/services/enquiry_service.dart';
+import 'package:dreamvision/providers/status_provider.dart';
 import 'package:dreamvision/widgets/back_button.dart';
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
@@ -61,6 +62,9 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
   @override
   void initState() {
     super.initState();
+    // Clear any cached statuses/exams to ensure fresh data
+    StatusProvider().clearCache();
+    
     // Create the model
     _formModel = EnquiryFormModel();
 
@@ -128,6 +132,17 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
           _exams = List<Map<String, dynamic>>.from(results[3]);
           _isLoading = false;
         });
+        
+        // Log retrieved statuses and exams
+        _logger.i('📊 Statuses retrieved: ${_statuses.length} items');
+        for (var status in _statuses) {
+          _logger.d('  - Status ID: ${status['id']}, Name: ${status['name']}');
+        }
+        
+        _logger.i('📚 Exams retrieved: ${_exams.length} items');
+        for (var exam in _exams) {
+          _logger.d('  - Exam ID: ${exam['id']}, Name: ${exam['name']}');
+        }
       }
     } catch (e) {
       _logger.e('Failed to load initial data: $e');
@@ -212,7 +227,11 @@ class _AddEnquiryPageState extends State<AddEnquiryPage> {
     } catch (e) {
       _logger.e('Failed to submit enquiry: $e');
       if (mounted) {
-        GlobalErrorHandler.error('Error submitting form: $e');
+        final rawMessage = e.toString();
+        final cleanedMessage = rawMessage.startsWith('Exception: ')
+            ? rawMessage.substring('Exception: '.length)
+            : rawMessage;
+        GlobalErrorHandler.error('Error submitting form: $cleanedMessage');
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);

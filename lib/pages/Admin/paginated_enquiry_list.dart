@@ -356,6 +356,9 @@ class PaginatedEnquiryListState extends State<PaginatedEnquiryList>
                     child: Center(child: CircularProgressIndicator()),
                   );
                 }
+                if (index < 0 || index >= _enquiries.length) {
+                  return const SizedBox.shrink();
+                }
                 final enquiry = _enquiries[index];
                 final fullName =
                     "${enquiry.firstName} ${enquiry.lastName ?? ''}".trim();

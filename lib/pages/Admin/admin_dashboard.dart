@@ -446,6 +446,7 @@ class _AdminDashboardState extends State<AdminDashboard>
     });
 
     _fetchStatusCounts();
+    _fetchAssignedUnassignedCounts();
   }
 
   void _clearFilters() {
@@ -462,6 +463,7 @@ class _AdminDashboardState extends State<AdminDashboard>
     });
 
     _fetchStatusCounts();
+    _fetchAssignedUnassignedCounts();
   }
 
   void _openFilterSheet() {
@@ -775,6 +777,7 @@ class _AdminDashboardState extends State<AdminDashboard>
                   type: EnquiryListType.unassigned,
                   initialStandard: _selectedStandard,
                   initialStatus: _selectedStatus,
+                  initialTelecallerId: _selectedTelecallerId,
                   onChanged: _refreshCountsOnly,
                 ),
               ),
@@ -785,6 +788,7 @@ class _AdminDashboardState extends State<AdminDashboard>
                   type: EnquiryListType.assigned,
                   initialStandard: _selectedStandard,
                   initialStatus: _selectedStatus,
+                  initialTelecallerId: _selectedTelecallerId,
                   onChanged: _refreshCountsOnly,
                 ),
               ),
